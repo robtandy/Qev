@@ -115,19 +115,27 @@ test("a baseline batch exposes every actual state in request order, not just the
   assert.equal(modelState(record({ requests: [] })), "[]");
 });
 
-test("the HTML has a card feed but no history picker, human button, or below-game panels", () => {
+test("the HTML keeps the card feed and compact controls without the old game panels", () => {
   const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
   assert.match(html, /<ol id="decisions"/);
   assert.match(html, /Last 5 · newest first/);
   const masthead = html.match(/<header class="masthead">([\s\S]*?)<\/header>/)[1];
-  assert.match(masthead, /<h1>Qev<\/h1>/);
+  assert.match(masthead, /<h1>Qev - quake \+ decision model<\/h1>/);
+  assert.match(html, /<title>Qev - quake \+ decision model<\/title>/);
   assert.match(masthead, /id="repo-link" href="https:\/\/github\.com\/robtandy\/Qev"/);
   const xLink = masthead.match(/<a id="x-post-link"[^>]*>𝕏<\/a>/)[0];
   assert.match(xLink, /aria-disabled="true"/);
   assert.doesNotMatch(xLink, /href=/);
-  assert.doesNotMatch(masthead, /KEVALA|QUAKE|Local experiment|software renderer|class="badge"/);
+  assert.doesNotMatch(masthead, /kevala|Local experiment|software renderer|class="badge"/i);
   assert.doesNotMatch(html, /id="(?:history|human|stats|health|armor|weapon|threats|navigation-status|navigation|observation|engine-log|game-state)"/);
-  assert.doesNotMatch(html, /<footer|Play yourself|class="screen-label"|id="(?:restart|score|frame)"/);
+  assert.doesNotMatch(html, /Play yourself|class="screen-label"|id="(?:restart|score|frame)"/);
+  const selector = html.match(/<select id="model"[^>]*>([\s\S]*?)<\/select>/)[1];
+  assert.match(selector, /^<option value="" disabled selected>Choose a decision model<\/option>/);
+  assert.match(selector, /value="laya"/);
+  assert.match(selector, /value="kev-0.8b"/);
+  const footer = html.match(/<footer class="credits"[\s\S]*?<\/footer>/)[0];
+  assert.match(footer, /Thanks to:/);
+  assert.deepEqual([...footer.matchAll(/<a\b[^>]*>([^<]+)<\/a>/g)].map(m => m[1]), ["kev", "laya", "kevala", "qwasm", "libre quake"]);
   const controls = html.match(/<div class="controls">([\s\S]*?)<\/div>/)[1];
   assert.deepEqual([...controls.matchAll(/<button\b[^>]*>([^<]+)<\/button>/g)].map(m => m[1]), ["Start", "Stop", "Step"]);
 });

@@ -122,9 +122,12 @@ continuous control and invalidates outstanding decisions before the engine load.
 are disabled during loading to prevent overlapping map commands. Model downloads remain explicit.
 
 The playback buttons are **Start**, **Stop**, and **Step** only. Start is one-way and disabled
-while running or loading a model. Without a model, Start remains available and opens an
-accessible Load model dialog identifying the selected model and download size. It starts no
-download or gameplay on its own. Cancel/Escape leave the world stopped; Load model explicitly
+while running or loading a model. The model selector initially says **Choose a decision
+model**, with neither Kev nor Laya selected. Load remains disabled until a valid choice;
+its handler also rejects an empty/unknown selection instead of falling back to the SDK's
+default. Start first prompts to choose a model, focusing the dropdown without downloading.
+Once chosen, Start opens an accessible Load model dialog identifying the selection and
+size. It starts no download or gameplay on its own. Cancel/Escape leave the world stopped; Load model explicitly
 invokes the existing loader, then the user presses Start again. Stop freezes the simulation
 without resetting the map. `src/stepper.js` owns
 a single-click frozen-score/bounded-action job. It can reuse only a still-fresh inspection
@@ -133,11 +136,13 @@ Its cancel operation invalidates the agent generation and releases inputs, so St
 inference or execution cannot be undone by a late reply. Map/model changes and tab/focus loss
 use the same cancellation path. Busy checks prevent concurrent step or start jobs. The old
 frozen Score and single-frame engine methods remain diagnostic APIs, not UI buttons. The game gets the larger left column and all the available
-viewport height after the compact controls. A ResizeObserver recomputes its fitted height
-when controls wrap or loading UI changes, preserving the renderer's 4:3 content. It stays
-fully visible at tested 1366×768 and 390×844 initial viewports. Stats, navigation/explanation
-panels, the engine-log panel, footer, and Play yourself button have been removed. Desktop
-cards scroll within an inspector matched to the game height; narrow screens stack the feed.
+viewport height after the compact controls and credits footer. A ResizeObserver recomputes
+its fitted height when controls wrap or loading UI changes, preserving the renderer's 4:3
+content. It stays fully visible at tested 1366×768 and 390×844 initial viewports. Stats,
+navigation/explanation panels, the engine-log panel, and Play yourself button have been
+removed. A compact **Thanks to:** footer links Kev, Laya, Kevala, Qwasm, and LibreQuake.
+Desktop cards scroll within an inspector matched to the game height; narrow screens stack
+the feed.
 
 `src/decision-cards.js` displays only the latest five records, newest first. Cards are keyed
 by decision ID: adding one at the top preserves older expanded details, payload scroll, and
@@ -150,7 +155,9 @@ by default.
 Its content comes directly from `requests[].state`, not `sharedState`, current telemetry, or
 candidate prose. A single shared-state request is displayed verbatim; a baseline batch shows
 all request states as a JSON array in request order. Its Copy control uses the same text.
-Text is never interpreted as HTML. The masthead shows the Qev brand on the left, with a
+Text is never interpreted as HTML. The heading and browser title are **Qev - quake +
+decision model**; startup restores that title after SDL initializes its own window caption.
+The masthead shows this brand on the left, with a
 GitHub repository link and an inactive 𝕏 post-link slot on the right. The X icon has no
 fabricated URL; it will be enabled when the actual post exists. Pressed primary buttons
 retain dark text and full opacity, so the disabled/running Start label stays readable.

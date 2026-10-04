@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "An inspectable Kevala decision-model controller for classic Quake via Qwasm.",
+  "description": "An inspectable decision-model controller for classic Quake via Qwasm.",
   "engines": { "node": ">=22" },
   "scripts": {
     "serve": "node scripts/serve.mjs",

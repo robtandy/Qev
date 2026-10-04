@@ -107,10 +107,11 @@ try {
       ['pak0.pak','pak1.pak','pak2.pak'].every((name) => files.includes(name));
   `);
   assert.deepEqual(requests.filter((url) => /^https?:/.test(url) && !url.startsWith('http://127.0.0.1:8091/')), [], "automatic game startup makes no remote/model requests");
-  await check("the header keeps Qev branding without the old product or renderer text", `
+  await check("the header and browser title use the requested decision-model branding", `
     const header=document.querySelector('.masthead');
-    return header.querySelector('h1').textContent==='Qev' && !header.querySelector('.badge') &&
-      !/QUAKE|KEVALA|Local experiment|software renderer/.test(header.textContent);
+    return header.querySelector('h1').textContent==='Qev - quake + decision model' &&
+      document.title==='Qev - quake + decision model' && !header.querySelector('.badge') &&
+      !/kevala|Local experiment|software renderer/i.test(header.textContent);
   `);
   await check("the upper-right header links to the actual GitHub repo and reserves an X icon without a fake URL", `
     const links=document.querySelector('.header-links'), repo=links.querySelector('#repo-link'), post=links.querySelector('#x-post-link');
@@ -118,13 +119,47 @@ try {
       post.textContent==='𝕏' && post.getAttribute('aria-disabled')==='true' && !post.hasAttribute('href') &&
       links.getBoundingClientRect().left>document.querySelector('.brand').getBoundingClientRect().right;
   `);
+  await check("the footer credits all five projects with their actual links", `
+    const footer=document.querySelector('footer.credits'), links=[...footer.querySelectorAll('a')];
+    return footer.textContent.includes('Thanks to:') &&
+      JSON.stringify(links.map(a=>[a.textContent,a.href]))===JSON.stringify([
+        ['kev','https://github.com/jaredpalmer/kev'],['laya','https://huggingface.co/convaiinnovations/laya'],
+        ['kevala','https://github.com/bvolpato/kevala'],['qwasm','https://github.com/GMH-Code/Qwasm'],
+        ['libre quake','https://github.com/lavenderdotpet/LibreQuake']]) &&
+      links.every(a=>a.target==='_blank' && a.relList.contains('noopener'));
+  `);
   await check("map 6 starts on Hard in both the actual engine and the selector", `
     return qev.engine.snapshot().map === 'lq_e0m6' && qev.engine.snapshot().difficulty === 2 &&
       document.querySelector('#map').value === 'lq_e0m6' && document.querySelector('#difficulty').value === '2' && !document.querySelector('#difficulty').disabled &&
       [...document.querySelector('#difficulty').options].map(o=>o.value).join(',') === '0,1,2,3' && !document.querySelector('.intro');
   `);
+  await check("the model dropdown starts with a required choice, never a default model", `
+    const select=document.querySelector('#model');
+    return select.value==='' && select.required && select.selectedOptions[0].textContent==='Choose a decision model' &&
+      select.selectedOptions[0].disabled && document.querySelector('#load-model').disabled && document.querySelector('#step').disabled && !qev.model;
+  `);
   await until(()=>evaluate("!document.querySelector('#auto').disabled"));
   await evaluate("window.beforeModelPrompt=qev.engine.snapshot();document.querySelector('#auto').click()");
+  await check("Start requires choosing Kev or Laya before any load confirmation", `
+    return document.querySelector('#model-required').open && document.querySelector('#model-required-title').textContent==='Choose a decision model' &&
+      document.querySelector('#confirm-model-prompt').textContent==='Choose model' &&
+      document.querySelector('#model-required-message').textContent.includes('Kev or Laya') && !qev.model && qev.engine.snapshot().paused;
+  `);
+  await evaluate("document.querySelector('#confirm-model-prompt').click()");
+  await check("Choose model focuses the dropdown without selecting or downloading anything", `
+    return !document.querySelector('#model-required').open && document.activeElement===document.querySelector('#model') &&
+      document.querySelector('#model').value==='' && document.querySelector('#load-model').disabled && !qev.model;
+  `);
+  await evaluate("document.querySelector('#load-model').dispatchEvent(new MouseEvent('click',{bubbles:true}))");
+  await check("even a forced Load event cannot fall back to an unselected default model", `
+    return document.querySelector('#model-required').open && document.querySelector('#confirm-model-prompt').textContent==='Choose model' &&
+      document.querySelector('#model-progress').hidden && !qev.model && qev.engine.snapshot().tick===beforeModelPrompt.tick;
+  `);
+  await evaluate("document.querySelector('#cancel-model-prompt').click();document.querySelector('#model').value='laya';document.querySelector('#model').dispatchEvent(new Event('change',{bubbles:true}))");
+  await check("selecting Laya enables loading without starting it automatically", `
+    return document.querySelector('#model').value==='laya' && !document.querySelector('#load-model').disabled && !qev.model;
+  `);
+  await evaluate("document.querySelector('#auto').click()");
   await check("Start without a model opens a load prompt while keeping the game stopped", `
     const prompt=document.querySelector('#model-required');
     return prompt.open && prompt.getAttribute('aria-labelledby')==='model-required-title' &&
@@ -139,7 +174,7 @@ try {
     return !document.querySelector('#model-required').open && !qev.model && !document.querySelector('#auto').disabled &&
       document.querySelector('#step').disabled && qev.engine.snapshot().paused && qev.engine.snapshot().tick===beforeModelPrompt.tick;
   `);
-  await evaluate("document.querySelector('#model').value='kev-0.8b';document.querySelector('#auto').click()");
+  await evaluate("document.querySelector('#model').value='kev-0.8b';document.querySelector('#model').dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#auto').click()");
   await check("the prompt identifies the selected model and its download size", `
     return document.querySelector('#model-required-message').textContent.includes('Kev · 857 MB');
   `);
@@ -149,7 +184,7 @@ try {
   await check("Escape dismisses the prompt without starting a download or the simulation", `
     return !qev.model && qev.engine.snapshot().paused && qev.engine.snapshot().tick===beforeModelPrompt.tick;
   `);
-  await evaluate("document.querySelector('#model').value='laya'");
+  await evaluate("document.querySelector('#model').value=''");
   assert.deepEqual(requests.filter(url=>/^https?:/.test(url) && !url.startsWith('http://127.0.0.1:8091/')),[], 'opening or cancelling the prompt must not initiate remote/model requests');
   await call("Emulation.setDeviceMetricsOverride", { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   await sleep(100);
@@ -163,6 +198,8 @@ try {
   await call("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await sleep(100);
   await check("compact setup leaves the complete mobile game above the fold", `
+    const brand=document.querySelector('.brand').getBoundingClientRect(), links=document.querySelector('.header-links').getBoundingClientRect();
+    if(brand.right>links.left || links.right>innerWidth) throw new Error('Mobile header overlap');
     const r=document.querySelector('.screen').getBoundingClientRect();
     if(scrollY!==0 || r.bottom>innerHeight || document.documentElement.scrollWidth>innerWidth) throw new Error('Mobile layout: '+JSON.stringify({screen:r.toJSON(),viewport:[innerWidth,innerHeight],scrollY,setup:document.querySelector('.setup').getBoundingClientRect().toJSON(),playback:document.querySelector('.playback').getBoundingClientRect().toJSON()}));
     return true;
@@ -179,10 +216,11 @@ try {
     return now.ready && now.alive && now.paused && now.tick === beforePause.tick && JSON.stringify(now.player.position) === JSON.stringify(beforePause.player.position);
   `);
   console.log("Initial full-level snapshot:", await evaluate("qev.engine.snapshot()"));
+  await evaluate("document.querySelector('#model').value='laya';document.querySelector('#model').dispatchEvent(new Event('change',{bubbles:true}))");
   await check("only the game remains in its column; the old panels, picker, and human button are removed", `
     const column=document.querySelector('.game-column');
     return column.children.length===1 && column.firstElementChild.className==='screen' &&
-      !document.querySelector('#history, #human, #stats, #navigation, #observation, #engine-log, .screen-label, footer') &&
+      !document.querySelector('#history, #human, #stats, #navigation, #observation, #engine-log, .screen-label') &&
       !!document.querySelector('#decisions') && document.querySelector('#map').options.length >= 8 &&
       typeof qev.engine.snapshot().player.silverKey === 'boolean' && qev.agent.navigation.summary(qev.engine.snapshot()).goalComplete === false;
   `);

@@ -7,6 +7,8 @@ import { DEMO, DEMO_MAPS } from "./demo-manifest.js";
 import { loadDemo } from "./demo.js";
 
 const $ = (id) => document.getElementById(id);
+const pageTitle = document.title;
+const modelSelected = () => ["laya", "kev-0.8b"].includes($("model").value);
 let engine = null, agent = null, model = null, snapshot = null, respawner = null, stepper = null;
 let operation = "", loadingModel = null, autoToken = 0, auto = false, playMode = "inspection";
 const engineLines = [];
@@ -37,7 +39,8 @@ function fitGame() {
     layoutFrame = null;
     const screen = document.querySelector(".screen"), canvas = $("game");
     const top = screen.getBoundingClientRect().top + scrollY;
-    const available = Math.max(160, innerHeight - top - 12);
+    const footerHeight = document.querySelector(".credits").getBoundingClientRect().height;
+    const available = Math.max(160, innerHeight - top - footerHeight - 12);
     const height = `${Math.floor(Math.min(canvas.clientWidth * 3 / 4, available))}px`;
     const style = document.documentElement.style;
     if (style.getPropertyValue("--game-height") !== height) style.setProperty("--game-height", height);
@@ -54,7 +57,7 @@ function updateControls() {
   $("auto").setAttribute("aria-pressed", String(auto));
   $("map").disabled = $("difficulty").disabled = !engine || !!operation;
   $("export").disabled = !agent?.history.length;
-  $("load-model").disabled = !!loadingModel || !!operation;
+  $("load-model").disabled = !modelSelected() || !!loadingModel || !!operation;
   $("model").disabled = $("backend").disabled = !!loadingModel || !!operation;
   $("cancel-model").hidden = !loadingModel;
   if (operation) $("status").textContent = operation;
@@ -68,7 +71,7 @@ function updateControls() {
   }
   else if (agent?.inflight) $("status").textContent = stepper?.busy ? "Choosing one action · world stopped. Stop cancels the step." : "Stopped · waiting for the previous model response to finish.";
   else if (!snapshot.paused) $("status").textContent = "Simulation running · P stops.";
-  else $("status").textContent = hasModel ? "Stopped · Start runs continuously. Step runs one decision." : "Stopped · press Start to load a decision model.";
+  else $("status").textContent = hasModel ? "Stopped · Start runs continuously. Step runs one decision." : modelSelected() ? "Stopped · press Start to load the selected model." : "Stopped · choose Kev or Laya first.";
 }
 function poll() {
   if (!engine) return;
@@ -104,13 +107,20 @@ async function guard(fn) {
 }
 async function score() { await agent.score(); }
 async function step() { return stepper.step(); }
+function promptForModel() {
+  const selected = modelSelected();
+  $("model-required-title").textContent = selected ? "Load a model first" : "Choose a decision model";
+  $("model-required-message").textContent = selected
+    ? `${$("model").selectedOptions[0].textContent}. Load this model to enable play. If it is not cached, it will download first; inference runs on this device. The game stays stopped—press Start again when loading finishes.`
+    : "Choose Kev or Laya in the Model dropdown first, then load it to enable play. Nothing has been downloaded.";
+  $("confirm-model-prompt").textContent = selected ? "Load model" : "Choose model";
+  if (!$("model-required").open) $("model-required").showModal();
+}
 async function runAuto() {
   if (auto) return;
   stop();
   if (!(agent?.getModel() || model)) {
-    const selection = $("model").selectedOptions[0].textContent;
-    $("model-required-message").textContent = `${selection}. Load this model to enable play. If it is not cached, it will download first; inference runs on this device. The game stays stopped—press Start again when loading finishes.`;
-    if (!$("model-required").open) $("model-required").showModal();
+    promptForModel();
     return;
   }
   agent.startLive();
@@ -159,6 +169,7 @@ async function startDemo() {
     $("asset-status").textContent = operation;
     updateControls();
     engine = await Engine.start({ canvas: $("game"), data, map: DEMO.map, difficulty: Number($("difficulty").value), onLog: log });
+    document.title = pageTitle; // SDL initializes its own window title; keep the site's branding.
     agent = new Agent({ engine, getModel: () => model, onChange: renderDecision });
     stepper = new Stepper(agent, updateControls);
     respawner = new Respawner({ engine, agent, getMode: () => playMode,
@@ -193,6 +204,8 @@ async function startDemo() {
   } finally { $("asset-progress").hidden = true; operation = ""; }
 }
 $("load-model").addEventListener("click", () => guard(async () => {
+  if (!modelSelected()) { promptForModel(); return; }
+  const name = $("model").value;
   stop(); agent?.invalidate();
   model?.dispose(); model = null;
   const abort = new AbortController(); loadingModel = abort;
@@ -202,7 +215,6 @@ $("load-model").addEventListener("click", () => guard(async () => {
   updateControls();
   try {
     const { Kevala } = await import("/vendor/kevala/index.js");
-    const name = $("model").value;
     model = await Kevala.load({
       model: name, backend: $("backend").value, signal: abort.signal,
       onProgress: (p) => {
@@ -228,9 +240,11 @@ $("cancel-model").addEventListener("click", () => loadingModel?.abort());
 $("cancel-model-prompt").addEventListener("click", () => $("model-required").close());
 $("confirm-model-prompt").addEventListener("click", () => {
   $("model-required").close();
+  if (!modelSelected()) { $("model").focus(); return; }
   // The prompt never downloads or queues gameplay until the user explicitly confirms.
   if (!(agent?.getModel() || model) && !loadingModel && !operation) $("load-model").click();
 });
+$("model").addEventListener("change", updateControls);
 $("pause").addEventListener("click", stop);
 $("step").addEventListener("click", () => guard(step));
 $("auto").addEventListener("click", () => guard(runAuto));
@@ -255,10 +269,11 @@ addEventListener("keydown", (event) => {
 addEventListener("blur", () => engine && stop());
 document.addEventListener("visibilitychange", () => { if (document.hidden && engine) stop(); });
 const layoutObserver = new ResizeObserver(fitGame);
-for (const selector of [".masthead", ".setup", ".playback", ".game-column"]) layoutObserver.observe(document.querySelector(selector));
+for (const selector of [".masthead", ".setup", ".playback", ".game-column", ".credits"]) layoutObserver.observe(document.querySelector(selector));
 addEventListener("resize", fitGame);
 setInterval(poll, 100);
 $("difficulty").value = String(DEFAULT_DIFFICULTY);
+$("model").value = "";
 renderDecision();
 fitGame();
 // Diagnostic handles, not an externally supported API. Tests use the same engine/agent as the UI.

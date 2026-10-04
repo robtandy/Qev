@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Qev · inspect a decision model playing Quake</title>
+  <title>Qev - quake + decision model</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <header class="masthead">
-    <div class="brand"><span class="mark">Q</span><h1>Qev</h1></div>
+    <div class="brand"><span class="mark">Q</span><h1>Qev - quake + decision model</h1></div>
     <nav class="header-links" aria-label="Project links">
       <a id="repo-link" href="https://github.com/robtandy/Qev" target="_blank" rel="noopener noreferrer" title="View Qev on GitHub">GitHub</a>
       <!-- Add the X post URL as href and remove aria-disabled when the post is ready. -->
@@ -21,9 +21,9 @@
       <div class="setup-row">
         <label class="map-setting">Map <select id="map" title="Changing the map loads it immediately and stops the game" disabled><option>Loading demo…</option></select></label>
         <label class="difficulty-setting">Difficulty <select id="difficulty" title="Changing difficulty reloads the current map and stops the game" disabled><option value="0">Easy</option><option value="1">Normal</option><option value="2" selected>Hard</option><option value="3">Nightmare</option></select></label>
-        <label class="model-setting">Model <select id="model"><option value="laya">Laya · 479 MB</option><option value="kev-0.8b">Kev · 857 MB</option></select></label>
+        <label class="model-setting">Model <select id="model" required><option value="" disabled selected>Choose a decision model</option><option value="laya">Laya · 479 MB</option><option value="kev-0.8b">Kev · 857 MB</option></select></label>
         <label class="backend-setting">Backend <select id="backend"><option value="auto">Auto / GPU</option><option value="wasm">CPU / WASM</option></select></label>
-        <button id="load-model">Load model</button><button id="cancel-model" hidden>Cancel</button>
+        <button id="load-model" disabled>Load model</button><button id="cancel-model" hidden>Cancel</button>
       </div>
       <div class="setup-status">
         <div><span id="asset-status" role="status">Preparing LibreQuake…</span> <a href="/demo/NOTICE.txt" target="_blank" rel="noreferrer">Licenses</a> <a id="retry-demo" href="/" hidden>Reload demo</a></div>
@@ -44,7 +44,7 @@
       </div>
       <div class="game-column">
         <div class="screen">
-          <canvas id="game" width="640" height="480" tabindex="0" aria-label="Quake game controlled by Kevala"></canvas>
+          <canvas id="game" width="640" height="480" tabindex="0" aria-label="Quake game controlled by a decision model"></canvas>
           <div id="screen-empty"><span class="crosshair">+</span><p>Your world starts here.</p><small id="empty-hint">Preparing map 6 · Great Greek Grinder…</small></div>
         </div>
       </div>
@@ -55,6 +55,14 @@
     </section>
     <p id="error" class="error" role="alert" hidden></p>
   </main>
+  <footer class="credits" aria-label="Project credits">
+    <span>Thanks to:</span>
+    <a href="https://github.com/jaredpalmer/kev" target="_blank" rel="noopener noreferrer">kev</a>
+    <a href="https://huggingface.co/convaiinnovations/laya" target="_blank" rel="noopener noreferrer">laya</a>
+    <a href="https://github.com/bvolpato/kevala" target="_blank" rel="noopener noreferrer">kevala</a>
+    <a href="https://github.com/GMH-Code/Qwasm" target="_blank" rel="noopener noreferrer">qwasm</a>
+    <a href="https://github.com/lavenderdotpet/LibreQuake" target="_blank" rel="noopener noreferrer">libre quake</a>
+  </footer>
   <dialog id="model-required" aria-labelledby="model-required-title" aria-describedby="model-required-message">
     <h2 id="model-required-title">Load a model first</h2>
     <p id="model-required-message">A decision model is required to start playing.</p>

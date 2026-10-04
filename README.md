@@ -1,6 +1,6 @@
 # Qev
 
-[Kevala](https://github.com/bvolpato/kevala) playing Quake in the browser through [Qwasm](https://github.com/GMH-Code/Qwasm).
+Decision models playing Quake in the browser through [Qwasm](https://github.com/GMH-Code/Qwasm).
 
 ## Build and run
 
@@ -16,7 +16,7 @@ npm run setup:demo
 npm run serve
 ```
 
-Open **http://127.0.0.1:8090/**. Click **Start**, load a model when prompted, then press **Start** again.
+Open **http://127.0.0.1:8090/**. Choose **Kev** or **Laya**, click **Start**, confirm loading, then press **Start** again.
 **Stop** freezes the game; **Step** runs one model-selected action and stops.
 Changing map or difficulty reloads the game stopped. The default is map 6 on Hard.
 
@@ -26,7 +26,7 @@ After initial setup, just run `npm run serve`.
 
 ## How it works
 
-Qwasm runs Quake in WebAssembly. Kevala runs locally in a browser worker, choosing between
+Qwasm runs Quake in WebAssembly. A decision model runs locally in a browser worker, choosing between
 short actions using visible game state and exploration memory—not screenshots or hidden map data.
 Qev revalidates each choice and applies bounded movement, aiming, and firing while the game
 keeps running between responses.
