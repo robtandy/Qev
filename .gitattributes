@@ -1,0 +1,3 @@
+# Preserve upstream license text and patch-context whitespace verbatim.
+engine/COPYING -whitespace
+engine/qwasm.patch -whitespace

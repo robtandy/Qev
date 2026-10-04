@@ -1,0 +1,152 @@
+{
+  "exampleNote": "Synthetic design fixture, not captured gameplay. The requests array is the proposed exact Kevala decideMany input. Candidate estimates and controller fields are proposed Qev data, not an existing Qwasm API. No model response has been generated.",
+  "synthetic": true,
+  "schemaVersion": 1,
+  "episodeId": "example-episode",
+  "observationId": "observation-42",
+  "simulationTick": 420,
+  "simulationHz": 60,
+  "actionTicks": 12,
+  "observationPolicy": "visibility-limited telemetry with disclosed local geometry probes",
+  "observation": {
+    "player": {
+      "health": 28,
+      "armor": 0,
+      "weapon": "shotgun",
+      "ammo": { "shells": 8 },
+      "grounded": true,
+      "inWater": false
+    },
+    "visibleThreats": [
+      {
+        "id": "example-episode:grunt-a:g1",
+        "kind": "grunt",
+        "bearingDegreesRight": 15,
+        "distanceUnits": 320,
+        "lineOfSight": true,
+        "health": null,
+        "intent": "unknown"
+      }
+    ],
+    "observedPickups": [
+      {
+        "id": "example-episode:health-a:g1",
+        "kind": "health",
+        "bearingDegreesRight": -65,
+        "distanceUnits": 96,
+        "visible": true,
+        "lastObservedTick": 420,
+        "testedLocalApproach": "clear with floor support"
+      }
+    ],
+    "localSpace": {
+      "left": "short sweep clear, floor support, no hazardous contents detected",
+      "right": "candidate sweep reaches a lava edge",
+      "back": "short sweep clear, floor support, no hazardous contents detected"
+    },
+    "memory": {
+      "lastAction": "track_and_fire_without_moving",
+      "damageTakenLastGameSecond": 12,
+      "localGoal": "survive the encounter, then explore an observed passage"
+    }
+  },
+  "candidates": [
+    {
+      "id": "strafe_left_fire",
+      "primitive": "strafe_and_fire",
+      "direction": "left",
+      "targetId": "example-episode:grunt-a:g1",
+      "weapon": "shotgun",
+      "aim": "bounded_tracking_of_selected_visible_target",
+      "fire": "only_while_current_shot_is_clear",
+      "leaseTicks": 12
+    },
+    {
+      "id": "stand_fire",
+      "primitive": "track_and_fire",
+      "direction": "none",
+      "targetId": "example-episode:grunt-a:g1",
+      "weapon": "shotgun",
+      "aim": "bounded_tracking_of_selected_visible_target",
+      "fire": "only_while_current_shot_is_clear",
+      "leaseTicks": 12
+    },
+    {
+      "id": "backpedal_fire",
+      "primitive": "backpedal_and_fire",
+      "targetId": "example-episode:grunt-a:g1",
+      "weapon": "shotgun",
+      "aim": "bounded_tracking_of_selected_visible_target",
+      "fire": "only_while_current_shot_is_clear",
+      "leaseTicks": 12
+    },
+    {
+      "id": "approach_health",
+      "primitive": "move_toward_observed_pickup",
+      "pickupId": "example-episode:health-a:g1",
+      "aim": "bounded_turn_toward_travel_heading",
+      "fire": false,
+      "leaseTicks": 12
+    }
+  ],
+  "rejectedCandidates": [
+    {
+      "id": "strafe_right_fire",
+      "reason": "The proposed local movement reaches hazardous lava contents. This is a mechanical rejection, not a model score."
+    }
+  ],
+  "requests": [
+    {
+      "state": "Situation: The player has low health (28), no armor, and a shotgun with eight shells. One grunt is visible at medium range ahead-right with a clear line of fire. A health pack is nearby ahead-left. The right-hand route reaches a lava edge. The player lost health while firing without moving during the last second. Goal: survive this encounter. Candidate: strafe left while tracking and firing at the visible grunt for 200 ms. Local probes and endpoint projection: the tested movement has floor support and no detected hazard; it ends closer to the health pack but does not reach it; a clear shot remains; the endpoint is still exposed to the grunt's current position. Enemy motion and future hits or damage are unknown.",
+      "questions": {
+        "favorable": {
+          "type": "noul",
+          "instructions": "Is the described short action favorable for the player's immediate situation?",
+          "criteria": {
+            "true": "addresses a stated need or threat with limited exposure and useful progress",
+            "false": "adds avoidable exposure, wastes scarce resources, or makes no useful progress"
+          }
+        }
+      }
+    },
+    {
+      "state": "Situation: The player has low health (28), no armor, and a shotgun with eight shells. One grunt is visible at medium range ahead-right with a clear line of fire. A health pack is nearby ahead-left. The right-hand route reaches a lava edge. The player lost health while firing without moving during the last second. Goal: survive this encounter. Candidate: remain in place while tracking and firing at the visible grunt for 200 ms. Local facts: the player stays on supported ground with a clear shot; exposure to the grunt's current position is unchanged; there is no progress toward the health pack. Enemy motion and future hits or damage are unknown.",
+      "questions": {
+        "favorable": {
+          "type": "noul",
+          "instructions": "Is the described short action favorable for the player's immediate situation?",
+          "criteria": {
+            "true": "addresses a stated need or threat with limited exposure and useful progress",
+            "false": "adds avoidable exposure, wastes scarce resources, or makes no useful progress"
+          }
+        }
+      }
+    },
+    {
+      "state": "Situation: The player has low health (28), no armor, and a shotgun with eight shells. One grunt is visible at medium range ahead-right with a clear line of fire. A health pack is nearby ahead-left. The right-hand route reaches a lava edge. The player lost health while firing without moving during the last second. Goal: survive this encounter. Candidate: backpedal while tracking and firing at the visible grunt for 200 ms. Local probes and endpoint projection: the tested movement has floor support and no detected hazard; it increases separation from the grunt's current position but moves farther from the health pack; a clear shot remains; no cover blocks the grunt's current line of sight. Enemy motion and future hits or damage are unknown.",
+      "questions": {
+        "favorable": {
+          "type": "noul",
+          "instructions": "Is the described short action favorable for the player's immediate situation?",
+          "criteria": {
+            "true": "addresses a stated need or threat with limited exposure and useful progress",
+            "false": "adds avoidable exposure, wastes scarce resources, or makes no useful progress"
+          }
+        }
+      }
+    },
+    {
+      "state": "Situation: The player has low health (28), no armor, and a shotgun with eight shells. One grunt is visible at medium range ahead-right with a clear line of fire. A health pack is nearby ahead-left. The right-hand route reaches a lava edge. The player lost health while firing without moving during the last second. Goal: survive this encounter. Candidate: turn and move toward the observed health pack without firing for 200 ms. Local probes and endpoint projection: the tested approach has floor support and no detected hazard; it ends closer to the health pack, but collection is not guaranteed during this interval; no shells are spent; the endpoint remains exposed to the grunt's current position. Enemy motion and future damage are unknown.",
+      "questions": {
+        "favorable": {
+          "type": "noul",
+          "instructions": "Is the described short action favorable for the player's immediate situation?",
+          "criteria": {
+            "true": "addresses a stated need or threat with limited exposure and useful progress",
+            "false": "adds avoidable exposure, wastes scarce resources, or makes no useful progress"
+          }
+        }
+      }
+    }
+  ]
+}

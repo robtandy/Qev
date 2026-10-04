@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Qev · inspect a decision model playing Quake</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="masthead">
+    <div class="brand"><span class="mark">Q</span><h1>Qev</h1></div>
+    <nav class="header-links" aria-label="Project links">
+      <a id="repo-link" href="https://github.com/robtandy/Qev" target="_blank" rel="noopener noreferrer" title="View Qev on GitHub">GitHub</a>
+      <!-- Add the X post URL as href and remove aria-disabled when the post is ready. -->
+      <a id="x-post-link" class="x-link" role="link" aria-disabled="true" aria-label="X post (link coming soon)" title="X post link coming soon" target="_blank" rel="noopener noreferrer">𝕏</a>
+    </nav>
+  </header>
+  <main>
+    <section class="setup" aria-label="Game and model setup">
+      <div class="setup-row">
+        <label class="map-setting">Map <select id="map" title="Changing the map loads it immediately and stops the game" disabled><option>Loading demo…</option></select></label>
+        <label class="difficulty-setting">Difficulty <select id="difficulty" title="Changing difficulty reloads the current map and stops the game" disabled><option value="0">Easy</option><option value="1">Normal</option><option value="2" selected>Hard</option><option value="3">Nightmare</option></select></label>
+        <label class="model-setting">Model <select id="model"><option value="laya">Laya · 479 MB</option><option value="kev-0.8b">Kev · 857 MB</option></select></label>
+        <label class="backend-setting">Backend <select id="backend"><option value="auto">Auto / GPU</option><option value="wasm">CPU / WASM</option></select></label>
+        <button id="load-model">Load model</button><button id="cancel-model" hidden>Cancel</button>
+      </div>
+      <div class="setup-status">
+        <div><span id="asset-status" role="status">Preparing LibreQuake…</span> <a href="/demo/NOTICE.txt" target="_blank" rel="noreferrer">Licenses</a> <a id="retry-demo" href="/" hidden>Reload demo</a></div>
+        <span id="model-status" role="status">Model downloads only on Load.</span>
+      </div>
+      <progress id="asset-progress" aria-label="Loading LibreQuake data" hidden></progress>
+      <progress id="model-progress" aria-label="Loading decision model" hidden></progress>
+    </section>
+    <section class="workbench" aria-label="Quake and decision inspector">
+      <div class="playback">
+        <div class="controls">
+          <button id="auto" class="primary" aria-pressed="false" title="Start real-time model control" disabled>Start</button>
+          <button id="pause" title="Stop the game and pending actions (P / Esc)" disabled>Stop</button>
+          <button id="step" title="Choose and run one short action, then stop (N)" disabled>Step</button>
+          <label>Speed <select id="speed"><option value="1">1×</option><option value="0.25">¼×</option><option value="0.1">⅒×</option></select></label>
+        </div>
+        <div class="playback-meta"><p id="status" role="status">Preparing the LibreQuake demo…</p><span id="clock">60 Hz · async control</span></div>
+      </div>
+      <div class="game-column">
+        <div class="screen">
+          <canvas id="game" width="640" height="480" tabindex="0" aria-label="Quake game controlled by Kevala"></canvas>
+          <div id="screen-empty"><span class="crosshair">+</span><p>Your world starts here.</p><small id="empty-hint">Preparing map 6 · Great Greek Grinder…</small></div>
+        </div>
+      </div>
+      <aside class="inspector" aria-label="Decision inspector">
+        <div class="inspector-head"><div><h2>Decisions</h2><p class="small muted">Last 5 · newest first</p></div><button id="export" disabled>Export trace</button></div>
+        <ol id="decisions" aria-label="Latest five decisions, newest first"><li class="empty">Load a model, then choose Start or Step. Decisions will appear here.</li></ol>
+      </aside>
+    </section>
+    <p id="error" class="error" role="alert" hidden></p>
+  </main>
+  <dialog id="model-required" aria-labelledby="model-required-title" aria-describedby="model-required-message">
+    <h2 id="model-required-title">Load a model first</h2>
+    <p id="model-required-message">A decision model is required to start playing.</p>
+    <div class="dialog-actions"><button id="cancel-model-prompt" autofocus>Cancel</button><button id="confirm-model-prompt" class="primary">Load model</button></div>
+  </dialog>
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>

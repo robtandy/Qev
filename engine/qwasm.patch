@@ -1,0 +1,118 @@
+Qev engine modifications, 2026-10-04.
+SPDX-License-Identifier: GPL-2.0-or-later
+Base: GMH-Code/Qwasm f56b5e71e4be8effede29bae1785a5306dcc0249.
+Original Quake source: Copyright (C) 1996-1997 Id Software, Inc.
+See engine/README.md and engine/COPYING for source and license notices.
+
+diff --git a/WinQuake/cl_input.c b/WinQuake/cl_input.c
+index b407ea2..c51003a 100644
+--- a/WinQuake/cl_input.c
++++ b/WinQuake/cl_input.c
+@@ -54,6 +54,24 @@ kbutton_t	in_up, in_down;
+ 
+ int			in_impulse;
+ 
++void Qev_ClearKeys(void)
++{
++	kbutton_t *buttons[] = {&in_mlook, &in_klook, &in_left, &in_right, &in_forward,
++		&in_back, &in_lookup, &in_lookdown, &in_moveleft, &in_moveright, &in_strafe,
++		&in_speed, &in_use, &in_jump, &in_attack, &in_up, &in_down};
++	unsigned i;
++	for (i = 0; i < sizeof(buttons) / sizeof(buttons[0]); i++)
++		memset(buttons[i], 0, sizeof(*buttons[i]));
++	in_impulse = 0;
++}
++
++void Qev_Attack(int down)
++{
++	in_attack.state = down ? 1 : 0;
++	in_jump.state = 0;
++	in_impulse = 0;
++}
++
+ 
+ void KeyDown (kbutton_t *b)
+ {
+diff --git a/WinQuake/cl_main.c b/WinQuake/cl_main.c
+index 5812143..a626d0d 100644
+--- a/WinQuake/cl_main.c
++++ b/WinQuake/cl_main.c
+@@ -676,11 +676,13 @@ void CL_SendCmd (void)
+ 
+ 	if (cls.signon == SIGNONS)
+ 	{
+-	// get basic movement from keyboard
+-		CL_BaseMove (&cmd);
+-	
+-	// allow mice or other external controllers to add to the move
+-		IN_Move (&cmd);
++		if (Qev_OwnsInput()) {
++			Q_memset(&cmd, 0, sizeof(cmd));
++			Qev_ApplyInput(&cmd);
++		} else {
++			CL_BaseMove (&cmd);
++			IN_Move (&cmd);
++		}
+ 	
+ 	// send the unreliable message
+ 		CL_SendMove (&cmd);
+diff --git a/WinQuake/host.c b/WinQuake/host.c
+index f72ddc1..2844ae3 100644
+--- a/WinQuake/host.c
++++ b/WinQuake/host.c
+@@ -484,6 +484,7 @@ not reinitialize anything.
+ */
+ void Host_ClearMemory (void)
+ {
++	Qev_WorldChanged();
+ 	Con_DPrintf ("Clearing memory\n");
+ 	D_FlushCaches ();
+ 	Mod_ClearAll ();
+@@ -705,6 +706,7 @@ void _Host_Frame (float time)
+ 	if (host_speeds.value)
+ 		time1 = Sys_FloatTime ();
+ 		
++	Qev_PreRender();
+ 	SCR_UpdateScreen ();
+ 
+ 	if (host_speeds.value)
+diff --git a/WinQuake/pr_edict.c b/WinQuake/pr_edict.c
+index 9680bb7..b70b96e 100644
+--- a/WinQuake/pr_edict.c
++++ b/WinQuake/pr_edict.c
+@@ -121,6 +121,7 @@ FIXME: walk all entities and NULL out references to this entity
+ */
+ void ED_Free (edict_t *ed)
+ {
++	Qev_EntityFreed(ed);
+ 	SV_UnlinkEdict (ed);		// unlink from world bsp
+ 
+ 	ed->free = true;
+diff --git a/WinQuake/quakedef.h b/WinQuake/quakedef.h
+index b5f0226..dac3671 100644
+--- a/WinQuake/quakedef.h
++++ b/WinQuake/quakedef.h
+@@ -335,6 +335,8 @@ void Chase_Init (void);
+ void Chase_Reset (void);
+ void Chase_Update (void);
+ 
++#include "qev_bridge.h"
++
+ #ifdef __EMSCRIPTEN__
+ 	// This is not ideal, but for now it is needed to ensure Emscripten's C
+ 	// compiler sets correct function signatures in object files.
+diff --git a/WinQuake/sys_sdl.c b/WinQuake/sys_sdl.c
+index 22d75f4..7522030 100644
+--- a/WinQuake/sys_sdl.c
++++ b/WinQuake/sys_sdl.c
+@@ -528,6 +528,10 @@ void main_loop(void)
+         }
+ #endif
+ 
++        // Qev owns a fixed-tick clock, including full-world pause and bounded stepping.
++        Qev_MainLoop();
++        return;
++
+         // find time spent rendering last frame
+         newtime = Sys_FloatTime ();
+         time = newtime - oldtime;
