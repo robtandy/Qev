@@ -15,15 +15,15 @@ function scans(nav, s, count) {
   }
 }
 
-test("empty rooms and defeated enemies are not level completion", () => {
+test("survival is primary; empty rooms and kills do not complete the secondary level objective", () => {
   const s = state(), nav = new ExplorationMemory(); nav.observe(s);
   const result = prepareDecision(s, probe, null, { navigation: nav });
   assert.equal(nav.summary(s).goalComplete, false);
   for (const r of result.requests) {
-    assert.match(r.state, /COMPLETE THE LEVEL/);
-    assert.match(r.state, /Kills or an empty room are NOT completion/);
+    assert.match(r.state, /Goal: SURVIVE/);
+    assert.match(r.state, /Explore.*only after survival needs/);
     assert.equal(r.questions.action.type, "choice");
-    assert.match(r.questions.action.instructions, /find and reach the level exit/);
+    assert.match(r.questions.action.instructions, /SURVIVE.*Exploration is secondary/);
   }
   s.completed = true; s.epoch++;
   nav.observe(s);

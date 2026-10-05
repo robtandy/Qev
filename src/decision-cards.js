@@ -36,6 +36,7 @@ export function decisionOutcome(record) {
   const before = record.appliedAt || record.before, after = record.after;
   return {
     status: decisionStatus(record), mode: record.mode,
+    objective: record.objective, objectives: record.objectives, offerPolicy: record.offerPolicy,
     observationTick: record.before.tick, appliedTick: record.appliedAt?.tick,
     ageTicksAtApply: record.ageTicksAtApply, ageMsAtApply: record.ageMsAtApply,
     observedTicksSinceApply: after?.epoch === before.epoch ? after.tick - before.tick : null,
@@ -130,7 +131,7 @@ export class DecisionCards {
         const row = this.element("li", chosen ? "chosen" : !candidate.allowed ? "filtered" : "");
         const top = this.element("div", "candidate-top");
         top.append(this.element("span", "", `${chosen ? "→ " : ""}${candidate.label}`), this.element("b", "", score ? `${(score.probability * 100).toFixed(1)}%` : "—"));
-        const text = candidate.reason || (index >= 0 ? `${record.decisionFormat === "choice" ? `Request [0] · choice “${candidate.id}”` : `Request [${index}]`} · up to ${candidate.params.ticks} ticks · bounded aim/movement assistance` : "Not offered: action budget limit");
+        const text = candidate.reason || candidate.offerNote || (index >= 0 ? `${record.decisionFormat === "choice" ? `Request [0] · choice “${candidate.id}”` : `Request [${index}]`} · up to ${candidate.params.ticks} ticks · bounded aim/movement assistance` : "Not offered: action budget limit");
         row.append(top, this.element("small", "", text));
         return row;
       });

@@ -96,12 +96,20 @@ async function promptStressCases() {
   const navigation = { summary: () => ({ rememberedCells: 1024, currentCellEntries: 99, noProgressActions: 5, stationaryScans: 1, recovery: false }),
     route: () => ({ destinationVisited: true, sameCell: false, visits: 99, failures: 1 }), inspected: () => true };
   const probe = p => ({ blocked: false, supported: true, hazard: false, end: [p.dx * 30, p.dy * 30, 24], lineOfSightAtEndpoint: false });
-  return [false, true].map(realtime => {
+  const variants = [
+    { name: "", armor: 100, ammo: 100, kinds: ["silver_key", "gold_key", "mega_health"] },
+    { name: "-supplies", armor: 0, ammo: 2, kinds: ["armor", "spikes", "mega_health"] },
+    { name: "-empty-ammo", armor: 0, ammo: 0, kinds: ["armor", "spikes", "mega_health"] },
+  ];
+  return variants.flatMap(variant => [false, true].map(realtime => {
+    const before = structuredClone(observation);
+    before.player.armor = variant.armor; before.player.ammo = variant.ammo;
+    before.pickups.forEach((pickup, i) => { pickup.kind = variant.kinds[i]; });
     const heldCandidate = realtime ? { id: "forward-left", category: "exploration", decisionId: 7,
       label: "Walk forward-left relative to the held course", params: { dx: 0.7071067811865476, dy: 0.7071067811865476, slot: -1, fire: false } } : null;
-    const prepared = prepareDecision(observation, probe, memory, { realtime, navigation, heldAction: heldCandidate?.label, heldCandidate });
-    return { id: `synthetic-token-budget-${realtime ? "live" : "inspection"}`, before: observation, eligible: prepared.eligible, sharedState: prepared.sharedState };
-  });
+    const prepared = prepareDecision(before, probe, memory, { realtime, navigation, heldAction: heldCandidate?.label, heldCandidate });
+    return { id: `synthetic-token-budget-${realtime ? "live" : "inspection"}${variant.name}`, before, eligible: prepared.eligible, sharedState: prepared.sharedState };
+  }));
 }
 
 export async function compareDecisions({ evaluate, root }) {
@@ -121,7 +129,7 @@ export async function compareDecisions({ evaluate, root }) {
       reports.push(report);
       await writeFile(resolve(root, `build/comparison-${map}-${format}.json`), JSON.stringify(report, null, 2));
       assert.ok(report.records.some(r => r.appliedAt), "each trial must execute actual model decisions");
-      assert.equal(report.exploration.goalComplete, report.end.completed, "only engine completion is victory");
+      assert.equal(report.exploration.goalComplete, report.end.completed, "only the engine marks secondary level completion");
       console.log("Live format comparison:", summarizeTrial(report));
       const usable = report.records.filter(r => r.before.player.grounded && r.eligible.length > 1);
       for (const fraction of [0, 0.5, 0.95]) {
@@ -140,13 +148,13 @@ export async function compareDecisions({ evaluate, root }) {
       largestInput: Math.max(...runs.map(r => r.largestInput)), tokenLimitHits: runs.filter(r => r.largestInput >= 512).length }];
   }));
   const summary = {
-    model: await evaluate("qev.model.info"), liveTrialMs: 30000, pairedStates: actual.length,
+    objective: "SURVIVE", model: await evaluate("qev.model.info"), liveTrialMs: 30000, pairedStates: actual.length,
     matchingChoices: actual.filter(s => s.runs.find(r => r.format === "choice").selected === s.runs.find(r => r.format === "noul").selected).length,
     inference, trials: reports.map(summarizeTrial),
     stress: paired.filter(r => r.id.startsWith("synthetic-")).map(r => ({ id: r.id, choiceTokens: r.runs.filter(x => x.format === "choice").map(x => x.tokens) })),
     caveats: ["Same saved observation and eligible actions for each paired inference; compact joint choice vs original per-candidate prose, not an isolated question-type ablation.",
       "Live trials are separate non-deterministic episodes, not identical replayed trajectories or a completion-rate benchmark.",
-      "Cells/displacement include gravity and inertia; neither is a map-completion percentage.",
+      "Survival is primary; cells/displacement are secondary exploration metrics, include gravity/inertia, and do not measure safety or success.",
       "Discarded includes intentional deadline cancellation; stationary-scan streaks exclude scans while falling/moving at least eight units."],
   };
   await writeFile(resolve(root, "build/decision-comparison.json"), JSON.stringify({ summary, paired }, null, 2));

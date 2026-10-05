@@ -189,11 +189,21 @@ intent before recovery captures it. Controlled comparison trials suspend automat
 to keep their metrics scoped to one episode. These are diagnostic handles, not asset/import
 modes or user-facing bypasses of the game rules.
 
-## Level objective, local navigation, and disclosed loop rules
+## Survival objective, secondary exploration, and disclosed controller rules
 
-Every request and its `action` choice question explicitly prioritize finding/reaching the level
-exit. Enemy absence and kills are not victory. Only the engine's `completed` flag ends the
-goal; the app makes no inferred completion or explored-map-percentage claim.
+The primary model goal is **SURVIVE**. `src/objective.js` defines the same ordered priorities
+for both choice and noul requests, the running status, decision inspection, and trace exports:
+
+1. Avoid damage and hazards; use cover or retreat.
+2. Recover needed health, armor, and ammunition without reckless exposure.
+3. Handle immediate threats while conserving ammunition.
+4. Explore for supplies, routes, and the exit only after survival needs.
+
+The prompt explicitly says not to risk life for novelty, keys, or kills. Survival is ongoing,
+not a completed-goal flag. Enemy absence, kills, movement, and new cells do not prove safety
+or success. Only the engine's `completed` flag establishes secondary level completion; the
+legacy `exploration.goalComplete` field still means that flag, not a survival score. No
+hidden exit coordinates or unexplored-map percentage are inferred.
 
 `ExplorationMemory` stores only sampled player positions/headings, observed contacts,
 model-selected route hints, and action outcomes. It uses 64-unit 3D cells (up to 1,024),
@@ -223,25 +233,41 @@ or bypasses normal game physics. Shot-operated switches and arbitrary puzzles ar
 The following policy filters are **controller assistance**, not model probabilities:
 
 - After repeated stationary scans/no new area or contact, suppress more stationary scans
-  when at least one walking option is available.
+  only when a walking option is available, no enemy is observed, and the last same-episode
+  outcome records no health loss. Known pressure must not force exploration merely to
+  increase novelty. Repetition during defense/recovery is not described as tactical failure.
 - Temporarily cool down a cell/direction after two attempted walks with negligible movement;
   short interruptions and unexecuted commands are not treated as failed walking.
 - Do not pursue full ordinary health or already-owned keys; megahealth has its own cap.
 - If every walking option is blocked and all headings have been inspected, offer wait/recheck
   rather than constant spinning, with scanning eligible again after a 120-game-tick cooldown.
 
-The six-candidate live budget (eight during inspection) reserves exploration alongside
-combat/resources; candidate shortlisting considers route continuation and measured visits/
-failures. Every filter has a visible reason and remains in the trace. The model chooses
-among eligible options using its returned action ID and unchanged public probabilities:
-there is no post-score rule that substitutes another move. No hidden exit coordinates, global actor lists, navigation
-mesh, or hand-authored route is used. This is local exploration, not a full planner.
+The six-candidate live budget (eight during inspection) keeps validated defensive options
+available instead of automatically putting keys/novelty first. It reserves firing choices
+including backpedal-and-fire (or another valid moving-fire option), up to two needed supplies,
+and walking alternatives. Visible health below 100 (especially at 30 or less), current-weapon
+ammo at five or less, and armor below 100 have shortlist priority over keys. Armor type/upgrade
+value is unknown; this is a disclosed offer heuristic, not a promised improvement.
+
+With a visible threat, walking offers favor projected blocked line of sight to the nearest
+observed enemy, then increased separation, before route continuation, visits, or failed-route
+counts. This can retain a known retreat rather than a novel forward path. These estimates
+refer to that enemy's observed position, not future movement or all enemies, and cannot
+promise cover or escape. Without a visible threat, route continuity and measured novelty
+still help offer exploration. Scan/wait options fill the remaining budget.
+
+These are **pre-score shortlist rules**, retained as `offerPolicy` in every record and its
+observation/outcome disclosure; a budget-omitted candidate has an `offerNote`, not a fake
+geometry rejection or model score. The model still chooses among offered options using its
+returned action ID and untouched probabilities. Nothing substitutes a different action after
+scoring. No global actor list, navigation mesh, or hand-authored route is used. This remains
+local control, not a full survival planner.
 
 ## Shared-state action choice
 
 The default protocol in both modes is **one state, one `choice` question**, containing all
-six live/eight inspection offers together. `prepareDecision` still constructs the same
-candidate pool and applies the existing pre-score filters/budget. It then builds a compact
+up to six live/eight inspection offers together. `prepareDecision` constructs the candidate
+pool and applies the disclosed survival-first filters/budget identically for both formats. It then builds a compact
 whitelisted state (objective, own condition, visible contacts, measured exploration, action
 limits/endpoint estimates, and recent action/pacing context). `questions.action.criteria`
 maps each offered action ID to a short description of its mechanics.
@@ -249,7 +275,9 @@ maps each offered action ID to a short description of its mechanics.
 `Agent.score()` sends `decideMany([request])`: a one-item batch, retained for consistent exact
 request/response capture. It does not repeat the state once per option. Laya's pinned pack
 has a 512-token sequence limit and a 192-token question/option head; short criteria leave
-space for useful observations. Crowded synthetic tests exercise the token budget separately
+space for useful observations. The state specifies the common maximum action duration once
+and lists shorter bounds where applicable, instead of spending that budget repeating identical
+durations. Crowded synthetic tests exercise the token budget separately
 from real gameplay evidence. A response reporting 512 input tokens produces a visible
 possible-truncation warning rather than silently claiming every word was read.
 
@@ -260,9 +288,10 @@ when public probabilities tie after rounding. The displayed ranking puts that ac
 winner first among tied values; it never replaces it with an input-order tie-breaker or
 interprets a raw array using guessed ordering. Unknown/malformed choices fail closed while
 retaining the complete original response. Relative choice probabilities are not calibrated
-level-completion probabilities or generated explanations.
+survival/level-completion probabilities or generated explanations.
 
-The old independent `favorable`/`noul` requests remain an **explicit comparison baseline**.
+The independent `favorable`/`noul` protocol remains an **explicit comparison baseline**, now
+using the same survival-first objective rather than the previous exit-first question.
 An `Agent`'s `decisionFormat` is fixed at construction; there is no runtime fallback that
 reinterprets an invalid choice as a noul answer. `requestsFor` can produce either formulation
 from an identical saved offer for passive paired evaluation, without querying or moving the
@@ -326,7 +355,8 @@ selected candidate after fresh checks. Scoring itself still never executes an an
 The selected live horizon (up to 750 ms, shorter near obstacles), currently held action,
 and exploration/loop context are disclosed in each request. Live records cannot be executed through debug Step after pausing.
 
-A record contains the before observation, mode, decision format, shared state, steering
+A record contains the primary objective, ordered supporting objectives, shortlist policy,
+before observation, mode, decision format, shared state, steering
 reference/source decision, exploration summary, all candidates (including geometry, ammo, resource-objective, and loop rejection
 reasons), eligible-ID-to-choice mapping, exact requests, untouched responses,
 ranking, selection, duration, status/error, and measured after observation. Live records
@@ -366,7 +396,9 @@ rounded choice ties, malformed or inconsistent distributions, immutable response
 trial-metric handling of cancellation and gravity, delayed-forward steering stability,
 view-relative combat/scans, rejection of expired or mismatched steering references, difficulty
 validation, respawn completion/cancellation/failure races, binary decision presentation,
-newest-five selection, and preservation of raw lifecycle/protocol data.
+newest-five selection, preservation of raw lifecycle/protocol data, the shared survival
+hierarchy, needed supplies ahead of keys, retreat/cover offers, pressure-aware scan guards,
+and unchanged model-choice authority.
 
 The Chromium check runs the real compiled engine with the automatic local-server demo.
 It checks the absence of an import UI (including at old asset-mode URLs), a real legacy
@@ -398,18 +430,19 @@ functional encounter, not a controlled published gameplay benchmark.
 
 With `--explore`, the browser check additionally runs 30 seconds of real Laya control on
 `lq_e0m1` and `lq_e0m2`, exporting observations, exploration summaries, requests/responses,
-and outcomes. Test collectors retain complete episodes without changing the app's 50-record
-history limit.
+and outcomes. Holding cover can be appropriate; visited cells or walking distance are not
+mandatory survival progress. Test collectors retain complete episodes without changing the
+app's 50-record history limit.
 
 With `--compare`, `scripts/compare-decisions.mjs` runs separate 30-second choice/noul episodes
 on both maps, alternating format order. Both use the same model, maps, candidate construction,
 loop rules, input limits, 100 ms observation polling, and single-flight control lifecycle.
 It then samples the exact saved offers for passive paired scoring: 12 observations, twice per
 format with alternating execution order. These paired requests share observation/action
-facts, but compare compact joint prose against the original per-candidate wording—not a
-pure ablation of the `type` field. No paired response is executed on an unrelated world.
+facts and the same survival hierarchy, but compare compact joint prose against detailed
+per-candidate wording—not a pure ablation of the `type` field. No paired response is executed on an unrelated world.
 
-One WebGPU run measured median paired latency of 145 ms / 354 tokens for choice versus
+A historical **exit-first** WebGPU run measured median paired latency of 145 ms / 354 tokens for choice versus
 721 ms / 2,189 batch tokens for noul. Crowded synthetic choice inputs used 465 tokens for
 inspection and 460 live (with a held-course reference), below Laya's cap. Live runs recorded
 67 vs 43 remembered cells on `lq_e0m1`, and 97 vs 47 on `lq_e0m2` (choice vs noul).
@@ -417,12 +450,21 @@ All four remained alive; none completed.
 The live trajectories are not deterministic/matched replays, and positions/displacement
 include gravity/inertia. These are development observations, not a general quality benchmark.
 
+The survival-first revision passes 214 Node tests plus real-engine/Laya browser regressions.
+Six crowded choice cases (inspection/live, ordinary offers, needed supplies, and empty ammo)
+used 481–500 tokens, below the pinned 512-token limit. Four separate 30-second choice/noul
+smoke episodes on those two maps remained alive without input-limit warnings; none completed.
+This validates the new request/control path, **not** an improvement in survival rate or a
+controlled comparison against the old objective.
+
 `build/decision-comparison.json` stores summaries and paired requests/responses; the four
 `build/comparison-<map>-<format>.json` files retain full live episodes. Scan input ticks and
 stationary scan streaks are separate metrics; falling is not stationary. Discarded replies
 include intentional deadline cancellation and are not all mislabeled as stale inference.
 
-The steering regression deliberately scores forward while a previous turn is unfinished,
+The steering regression faces the open side of the arena to isolate course construction
+from threat-aware shortlisting, which may legitimately prefer a different cover/retreat option.
+It deliberately scores forward while a previous turn is unfinished,
 advances the actual engine during the delayed reply, and checks that repeated forward does
 not reverse the view. It permits legitimate fresh-geometry rejection rather than bypassing
 native guards. The two new choice trajectories also retained the prior held direction in

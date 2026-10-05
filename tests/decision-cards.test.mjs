@@ -8,7 +8,7 @@ function record(overrides = {}) {
   return { id: 1, status: "scoring", mode: "realtime", decisionFormat: "choice", selectedIndex: null,
     eligible: [choice], candidates: [choice], ranking: [], model: { arch: "laya", backend: "webgpu" },
     ms: null, before: { epoch: 2, tick: 30, player: { health: 100, position: [0, 0, 24] } },
-    requests: [{ state: "COMPLETE THE LEVEL", questions: { action: { type: "choice", criteria: { forward: "Walk forward." } } } }],
+    requests: [{ state: "Goal: SURVIVE", questions: { action: { type: "choice", criteria: { forward: "Walk forward." } } } }],
     responses: null, appliedAt: null, after: null, error: null, ...overrides };
 }
 
@@ -100,7 +100,7 @@ test("presentation preserves raw protocol payloads, errors, and internal lifecyc
 });
 
 test("the state panel uses the exact submitted state, not reconstructed or unsent text", () => {
-  const state = 'COMPLETE THE LEVEL\n  Preserve spacing, Ω, and <img src=x onerror="window.injected=true">.';
+  const state = 'Goal: SURVIVE\n  Preserve spacing, Ω, and <img src=x onerror="window.injected=true">.';
   const r = record({ requests: [{ state }], sharedState: "UNSENT_SHARED_STATE" });
   r.candidates[0].state = "UNSENT_BASELINE_PROSE";
   const before = JSON.stringify(r);

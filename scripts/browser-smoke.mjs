@@ -319,7 +319,9 @@ try {
   `);
   await check("one shared state offers every eligible action together and preserves the SDK choice", `
     const r = qev.agent.current, input = r.requests[0];
-    return r.decisionFormat === 'choice' && r.requests.length === 1 && input.questions.action.type === 'choice' &&
+    return r.objective==='SURVIVE' && r.objectives.length===4 && input.state.startsWith('Goal: SURVIVE') &&
+      input.questions.action.instructions.includes('SURVIVE') &&
+      r.decisionFormat === 'choice' && r.requests.length === 1 && input.questions.action.type === 'choice' &&
       JSON.stringify(Object.keys(input.questions.action.criteria)) === JSON.stringify(r.eligible.map(c=>c.id)) &&
       r.eligible[r.selectedIndex].id === r.responses[0].answers.action.choice &&
       document.querySelector('.decision-card [data-payload="state"]').textContent===input.state &&
@@ -582,6 +584,13 @@ try {
     const calls=[], model={info:{backend:'steering-test'},decideMany(requests){return new Promise(resolve=>calls.push({requests,resolve}));}};
     const agent=new Agent({engine:qev.engine,getModel:()=>model});
     const delta=(a,b)=>((a-b+540)%360+360)%360-180;
+    // Face the open side of the arena to isolate steering from the new threat-aware
+    // shortlist. A retreat/cover offer may legitimately displace forward in combat.
+    for(let i=0;i<6 && Math.abs(delta(0,qev.engine.snapshot().player.yaw))>1;i++) {
+      const s=qev.engine.snapshot();
+      await qev.engine.act({epoch:s.epoch,tick:s.tick,dx:0,dy:0,slot:-1,generation:0,yaw:0,pitch:0,fire:false,ticks:12});
+    }
+    if(qev.engine.snapshot().enemies.length) throw new Error('Steering fixture still faces a threat');
     qev.engine.speed(0.25);
     try {
       agent.startLive();
@@ -725,13 +734,9 @@ try {
       console.log('Full-level exploration:', {map,alive:report.observation.alive,completed:report.observation.completed,cells:report.exploration.rememberedCells,moved:report.exploration.distanceMoved,scans:report.exploration.stationaryScans,decisions:report.records.length,applied:report.records.filter(r=>r.appliedAt).length,choices:report.records.filter(r=>r.appliedAt).map(r=>r.eligible[r.selectedIndex].id)});
       await writeFile(resolve(root, `build/exploration-${map}.json`), JSON.stringify(report, null, 2));
       assert.ok(report.records.some(r=>r.appliedAt), 'the full-level run must actually apply a model choice');
-      assert.ok(report.exploration.rememberedCells >= 3 && report.records.some(r=>{
-        const p=r.eligible[r.selectedIndex]?.params;
-        return r.appliedAt && r.after?.epoch===r.appliedAt.epoch && r.execution?.ticksApplied>0 && p && (p.dx||p.dy) &&
-          Math.hypot(r.after.player.position[0]-r.appliedAt.player.position[0],r.after.player.position[1]-r.appliedAt.player.position[1])>8;
-      }), 'full-level smoke must demonstrate actual walking and new position cells, not only turning/falling');
-      assert.ok(report.records.every(r=>r.requests.every(x=>x.state.includes('COMPLETE THE LEVEL'))), 'every full-level request retains the exit objective');
-      assert.equal(report.exploration.goalComplete, report.observation.completed, 'only engine completion marks the goal complete');
+      // Survival may correctly hold cover instead of maximizing distance or newly visited cells.
+      assert.ok(report.records.every(r=>r.objective==='SURVIVE' && r.requests.every(x=>x.state.startsWith('Goal: SURVIVE'))), 'every full-level request makes survival primary');
+      assert.equal(report.exploration.goalComplete, report.observation.completed, 'the navigation completion flag still means engine-confirmed level completion, not a survival score');
     }
     await writeFile(resolve(root, 'build/exploration-summary.json'), JSON.stringify(reports.map(r=>({map:r.map,alive:r.observation.alive,completed:r.observation.completed,cells:r.exploration.rememberedCells,moved:r.exploration.distanceMoved,applied:r.records.filter(x=>x.appliedAt).length})),null,2));
   }

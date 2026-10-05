@@ -21,13 +21,14 @@ test("choice is one state with a short description for every offered action", ()
   assert.equal(r.requests.length, 1);
   const input = r.requests[0];
   assert.equal(input.questions.action.type, "choice");
-  assert.equal(input.state.match(/COMPLETE THE LEVEL/g).length, 1);
+  assert.equal(input.state.match(/SURVIVE/g).length, 1);
   assert.match(input.state, /health 25.*armor 10.*ammo 12.*keys silver/);
   assert.match(input.state, /gold key/);
   assert.match(input.state, /new cell/);
   assert.match(input.state, /stationary input/);
   assert.match(input.state, /Geometry is estimated/);
-  assert.match(input.state, /enemy LOS/);
+  assert.match(input.state, /LOS clear/);
+  assert.match(input.state, /Enemy estimates use the nearest observed threat/);
   assert.deepEqual(Object.keys(input.questions.action.criteria), r.eligible.map(c => c.id));
   for (const c of r.eligible) {
     assert.equal(input.questions.action.criteria[c.id], c.choiceText);

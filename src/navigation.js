@@ -61,6 +61,7 @@ export class ExplorationMemory {
       noProgressActions: this.noProgressActions, stationaryScans: this.stationaryScans,
       recovery: this.stationaryScans >= 2 || this.noProgressActions >= 6,
       distanceMoved: Math.round(this.travel), lastProgressTick: this.lastProgressTick, lastScanTick: this.lastScanTick,
+      // Legacy name: engine-confirmed level completion, not a survival score.
       goalComplete: this.completed, waypoint: this.goal ? { position: [...this.goal.position], label: this.goal.label } : null,
     };
   }

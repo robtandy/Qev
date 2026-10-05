@@ -3,6 +3,7 @@ import { Agent } from "./agent.js";
 import { Respawner } from "./respawn.js";
 import { DecisionCards } from "./decision-cards.js";
 import { Stepper } from "./stepper.js";
+import { PRIMARY_OBJECTIVE, SURVIVAL_OBJECTIVES } from "./objective.js";
 import { DEMO, DEMO_MAPS } from "./demo-manifest.js";
 import { loadDemo } from "./demo.js";
 
@@ -67,7 +68,7 @@ function updateControls() {
   else if (snapshot.remaining) $("status").textContent = `Stepping · ${snapshot.remaining} ticks left. Stop interrupts immediately.`;
   else if (auto) {
     const last = agent.history.findLast((r) => r.mode === "realtime" && r.ms !== null);
-    $("status").textContent = `Running · find the exit${last ? ` · ${Math.round(last.ms)} ms / decision` : ""}. Stop to inspect.`;
+    $("status").textContent = `Running · ${PRIMARY_OBJECTIVE}${last ? ` · ${Math.round(last.ms)} ms / decision` : ""}. Stop to inspect.`;
   }
   else if (agent?.inflight) $("status").textContent = stepper?.busy ? "Choosing one action · world stopped. Stop cancels the step." : "Stopped · waiting for the previous model response to finish.";
   else if (!snapshot.paused) $("status").textContent = "Simulation running · P stops.";
@@ -251,7 +252,7 @@ $("auto").addEventListener("click", () => guard(runAuto));
 for (const id of ["map", "difficulty"]) $(id).addEventListener("change", () => guard(loadSelectedMap));
 $("speed").addEventListener("change", () => guard(async () => engine?.speed(Number($("speed").value))));
 $("export").addEventListener("click", () => {
-  const url = URL.createObjectURL(new Blob([json({ version: 4, decisionFormat: agent.decisionFormat, respawns: respawner?.count || 0, activeLevel: snapshot?.ready ? { map: snapshot.map, difficulty: snapshot.difficulty } : null, observation: snapshot, engineLog: engineLines.slice(), objective: "Complete the level by finding and reaching the exit; combat is not completion", exploration: agent.navigation.inspect(), observationPolicy: "visibility-limited telemetry", controller: "200 units/s, 180 deg/s aim, 60 Hz; inspection 12 ticks; real-time leases up to 45 ticks / 1500 ms wall time; decisions at most 60 ticks / 1500 ms old", records: agent.history })], { type: "application/json" }));
+  const url = URL.createObjectURL(new Blob([json({ version: 4, decisionFormat: agent.decisionFormat, respawns: respawner?.count || 0, activeLevel: snapshot?.ready ? { map: snapshot.map, difficulty: snapshot.difficulty } : null, observation: snapshot, engineLog: engineLines.slice(), objective: PRIMARY_OBJECTIVE, objectives: SURVIVAL_OBJECTIVES, exploration: agent.navigation.inspect(), observationPolicy: "visibility-limited telemetry", controller: "200 units/s, 180 deg/s aim, 60 Hz; inspection 12 ticks; real-time leases up to 45 ticks / 1500 ms wall time; decisions at most 60 ticks / 1500 ms old", records: agent.history })], { type: "application/json" }));
   const link = document.createElement("a"); link.href = url; link.download = "qev-trace.json"; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });

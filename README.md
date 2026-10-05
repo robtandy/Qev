@@ -26,8 +26,9 @@ After initial setup, just run `npm run serve`.
 
 ## How it works
 
-Qwasm runs Quake in WebAssembly. A decision model runs locally in a browser worker, choosing between
-short actions using visible game state and exploration memory—not screenshots or hidden map data.
+The goal is **SURVIVE**: avoid harm, recover supplies, and handle threats. Exploration is secondary.
+Qwasm runs Quake in WebAssembly. A decision model chooses short actions in a browser worker
+using visible game state and exploration memory—not screenshots or hidden map data.
 Qev revalidates each choice and applies bounded movement, aiming, and firing while the game
 keeps running between responses.
 

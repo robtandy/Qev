@@ -1,8 +1,9 @@
 # State and actions: initial proposal
 
 This document preserves the initial design and broader experiments. A first vertical slice
-is now implemented; see [the implementation notes](implementation.md) and the repository
-README for its exact behavior and remaining limits. The sample encounter and candidate
+is now implemented with **SURVIVE** as the primary goal and exploration secondary; see
+[the implementation notes](implementation.md) and the repository README for its exact
+priorities, current shared-state choice protocol, and remaining limits. The sample encounter and candidate
 estimates in `examples/combat-decision.json` are still synthetic, not captured gameplay.
 
 ## 1. Where the model belongs

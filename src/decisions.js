@@ -1,3 +1,5 @@
+import { PRIMARY_OBJECTIVE, SURVIVAL_OBJECTIVES, GOAL_PROMPT, OFFER_POLICY } from "./objective.js";
+
 export const ACTION_TICKS = 12;
 export const LIVE_TICKS = 45;
 export const MAX_DECISION_AGE_TICKS = 60;
@@ -12,10 +14,10 @@ export function validateDecisionFormat(format) {
 export const NOUL_BASELINE_QUESTION = {
   favorable: {
     type: "noul",
-    instructions: "Does this action help complete the Quake level by finding and reaching its exit?",
+    instructions: `Does this action help the player ${PRIMARY_OBJECTIVE}, with exploration secondary?`,
     criteria: {
-      true: "makes exploration or route progress, obtains a needed key or resource, or deals with a threat blocking progress",
-      false: "repeats an unproductive scan or failed route, revisits the same area without purpose, pursues unneeded pickups, or adds avoidable danger",
+      true: "avoids damage or hazards, reaches needed supplies, handles an immediate threat, or explores after survival needs are met",
+      false: "adds avoidable danger, ignores urgent health or ammo needs, wastes ammunition, or pursues keys, kills or novelty at the expense of survival",
     },
   },
 };
@@ -32,7 +34,19 @@ const toward = (from, to) => {
 const heading = (move) => Math.atan2(move[1], move[0]) * 180 / Math.PI;
 const moving = (candidate) => Math.hypot(candidate.params.dx, candidate.params.dy) > 0.001;
 const safe = (geometry) => !geometry.error && !geometry.blocked && geometry.supported && !geometry.hazard;
-const COURSE_CONTEXT = "Walking directions use the held travel course, not the turning camera. Contacts, scans and combat use the current view.";
+const COURSE_CONTEXT = "Walk headings use the held course, not the turning camera; contacts/scans/combat use current view.";
+const underPressure = (observation, memory) => observation.enemies.some(e => e.visible === true) ||
+  (memory?.epoch === observation.epoch && memory.damage > 0);
+const ammoKind = (weapon) => /shotgun/.test(weapon) ? "shells" : /nailgun/.test(weapon) ? "spikes" :
+  /launcher/.test(weapon) ? "rockets" : weapon === "lightning" ? "cells" : null;
+function supplyPriority(candidate, player) {
+  const kind = candidate.pickupKind;
+  if ((kind === "health" || kind === "mega_health") && player.health < 100) return player.health <= 30 ? 0 : 1;
+  if (kind === ammoKind(player.weapon) && player.ammo <= 5) return player.ammo <= 0 ? 1 : 2;
+  if (kind === "armor" && player.armor < 100) return 2;
+  if (kind === "mega_health" || kind === "armor" || kind === ammoKind(player.weapon)) return 3;
+  return kind === "silver_key" || kind === "gold_key" ? 5 : 4;
+}
 
 /** A delayed 'forward' must not steer back toward an old, intermediate camera angle. */
 function steeringFrame(observation, { realtime = false, heldCandidate = null } = {}) {
@@ -49,14 +63,14 @@ export function situation(observation, memory = null, exploration = null) {
   const enemies = observation.enemies.filter((e) => e.visible === true);
   const pickups = observation.pickups.filter((e) => e.visible === true);
   const text = [
-    "Goal: COMPLETE THE LEVEL: find and reach the exit. Kills or an empty room are NOT completion. Explore corridors, collect needed keys, use doors/buttons, and backtrack at dead ends.",
+    GOAL_PROMPT,
     `Player: ${p.health <= 30 ? "low" : "moderate or high"} health (${p.health}), armor ${p.armor}, ${p.weapon}, ${p.ammo} ammo. Keys: ${[p.silverKey && "silver", p.goldKey && "gold"].filter(Boolean).join(" and ") || "none"}. ${p.grounded ? "Grounded." : "Airborne; gravity and momentum apply."}${p.inWater ? " In water." : ""}`,
-    enemies.length ? `Enemies observed: ${enemies.map((e) => `${readable(e.kind)} ${bearing(e.bearingRight)} ${range(e.distance)}`).join("; ")}.` : "No enemies are currently observed; unseen areas are unknown. Keep exploring; the exit has not been reached.",
+    enemies.length ? `Enemies observed: ${enemies.map((e) => `${readable(e.kind)} ${bearing(e.bearingRight)} ${range(e.distance)}`).join("; ")}.` : "No enemies are currently observed; unseen areas are unknown. Check for threats and needed supplies before exploring.",
     pickups.length ? `Visible pickups: ${pickups.map((e) => `${readable(e.kind)} ${bearing(e.bearingRight)} ${range(e.distance)}`).join("; ")}.` : "No pickups observed.",
   ];
   if (exploration) {
     text.push(`Exploration memory: ${exploration.rememberedCells} visited grid cells, ${exploration.currentCellEntries} entries into this cell; ${exploration.noProgressActions} actions without new area/contact, ${exploration.stationaryScans} consecutive stationary scans.`);
-    if (exploration.recovery) text.push("Loop detected: stop circling in place; try a different walkable route or backtrack.");
+    if (exploration.recovery) text.push(underPressure(observation, memory) ? "Repeated area/contact observations are not a failure while defending or recovering." : "Loop detected: change route only when survival needs allow.");
   }
   if (memory?.epoch === observation.epoch) {
     text.push(`Last action: ${memory.label}; ${memory.displacement < 5 ? "almost no displacement" : "changed position"}; lost ${memory.damage} health ${memory.realtime ? "in the observed interval after applying it" : "during that action"}.`);
@@ -96,7 +110,7 @@ export function candidates(observation, probe, memory = null, { realtime = false
     let filterKind = reason ? "geometry" : null;
     if (fire && (p.ammo <= 0 || p.weapon === "axe")) { reason = "No supported ranged weapon with ammunition."; filterKind = "ammo"; }
     if (category === "pickup" && ((target.kind === "health" && p.health >= 100) || (target.kind === "mega_health" && p.health >= 250) || (target.kind === "silver_key" && p.silverKey) || (target.kind === "gold_key" && p.goldKey))) {
-      reason = "This resource is already full or owned; it does not advance the level objective."; filterKind = "objective";
+      reason = "This resource is already full or owned; approaching it adds no needed resource."; filterKind = "objective";
     }
     const route = isMoving && geometry.end && navigation ? navigation.route(p.position, geometry.end, ...move) : null;
     if (!reason && route?.coolingDown) { reason = "Loop guard: this route repeatedly produced no movement; try another direction temporarily."; filterKind = "loop"; }
@@ -106,14 +120,17 @@ export function candidates(observation, probe, memory = null, { realtime = false
       facts.push(geometry.contact ? `Local probe reaches a touch-operated ${geometry.contact}; contact may open it, not guaranteed.` : "Tested walking route is clear, supported, and avoids detected lava/slime.");
       if (params.ticks < initialTicks) facts.push("Shorter step near an obstacle/edge; farther travel is not validated.");
     }
-    if (route) facts.push(!route.destinationVisited ? "Endpoint is in a not-yet-visited grid cell; a possible exploration route, not a known exit." : route.sameCell ? "Endpoint stays in the current visited cell." : `Endpoint returns to a cell entered ${route.visits} times; useful only for backtracking or a resource.`);
+    if (route) facts.push(!route.destinationVisited ? "Endpoint is in a not-yet-visited grid cell; a possible exploration route, not a known exit." : route.sameCell ? "Endpoint stays in the current visited cell." : `Endpoint returns to a cell entered ${route.visits} times; revisiting may help retreat, cover or supplies.`);
     if (id === "continue-route") facts.push("Keeps the model-selected exploration direction while walkable; may pass the previous local waypoint. No scripted map route.");
     const headingInspected = category === "scan" && !!navigation?.inspected(p.position, yaw);
-    if (category === "scan") facts.push(headingInspected ? "This heading was already inspected from this area; another turn reveals no guaranteed new information." : "This turn may inspect another heading but makes no positional progress toward the exit.");
+    if (category === "scan") facts.push(headingInspected ? "This heading was already inspected from this area; another turn reveals no guaranteed new information." : "This turn may reveal a threat, supply or route without committing to movement; it does not establish safety.");
     const threat = observation.enemies.find((e) => e.visible === true);
     if (threat) {
       const exposure = target === threat ? geometry : probe({ ...params, slot: threat.slot, generation: threat.generation });
-      geometry.threatExposure = { slot: threat.slot, generation: threat.generation, lineOfSightAtEndpoint: exposure.lineOfSightAtEndpoint };
+      const separationDelta = geometry.end && threat.position ? distance(geometry.end, threat.position) - distance(p.position, threat.position) : null;
+      geometry.threatExposure = { slot: threat.slot, generation: threat.generation, lineOfSightAtEndpoint: exposure.lineOfSightAtEndpoint, separationDelta };
+      if (separationDelta > 5) facts.push("Endpoint is farther from the observed enemy's current position; escape is not guaranteed.");
+      if (separationDelta < -5) facts.push("Endpoint is closer to the observed enemy's current position.");
       if (exposure.lineOfSightAtEndpoint !== null) facts.push(exposure.lineOfSightAtEndpoint ? "Endpoint remains exposed to the observed enemy." : "Endpoint blocks the observed enemy's current line of sight.");
       facts.push(fire ? "Tracks and fires when aim/line of fire permit; hits are not guaranteed." : "Does not fire at the observed enemy.");
     }
@@ -131,7 +148,7 @@ export function candidates(observation, probe, memory = null, { realtime = false
     if (category === "wait") choiceText = "Wait and recheck blocked walking routes.";
     if (category === "pickup") choiceText = `Approach ${readable(target.kind)} ${bearing(target.bearingRight)}; no fire.`;
     if (fire) choiceText = `Fire at ${readable(target.kind)} ${bearing(target.bearingRight)}; ${isMoving ? `move ${id.replace("-fire", "")}` : "stand still"}.`;
-    const candidate = { id, category, label, choiceText, headingInspected, params, geometry, route, allowed: !reason, reason, filterKind, state };
+    const candidate = { id, category, label, choiceText, headingInspected, params, geometry, route, pickupKind: category === "pickup" ? target.kind : null, allowed: !reason, reason, filterKind, state };
     options.push(candidate); return candidate;
   }
   const enemies = observation.enemies.filter((e) => e.visible === true).slice(0, 3);
@@ -165,10 +182,10 @@ export function candidates(observation, probe, memory = null, { realtime = false
     }
     add("wait-route", "Wait briefly and recheck the blocked route; no safe walk is known", [0, 0], null, false, p.yaw, "wait");
   }
-  if (summary?.recovery && hasWalkingRoute) {
+  if (summary?.recovery && hasWalkingRoute && !underPressure(observation, memory)) {
     for (const c of options.filter((c) => c.category === "scan")) {
       c.allowed = false; c.filterKind = "loop";
-      c.reason = "Loop guard: repeated stationary scans made no exploration progress; choose a walkable route first.";
+      c.reason = "Loop guard: repeated stationary scans with no observed threat or recent damage; recheck a walkable route.";
     }
   }
   // Never leave no choices solely because of historical cooldowns; current geometry still wins.
@@ -181,22 +198,38 @@ export function prepareDecision(observation, probe, memory, options = {}) {
   const all = candidates(observation, probe, memory, options);
   const valid = all.filter((c) => c.allowed);
   const combat = valid.filter((c) => c.category === "combat");
-  const resources = valid.filter((c) => c.category === "pickup").sort((a, b) => Number(/key/.test(b.label)) - Number(/key/.test(a.label)));
-  const routes = valid.filter((c) => c.category === "exploration").sort((a, b) =>
-    Number(b.id === "continue-route") - Number(a.id === "continue-route") ||
-    (a.route?.failures || 0) - (b.route?.failures || 0) || (a.route?.visits || 0) - (b.route?.visits || 0));
+  // Keep one stationary firing choice and a defensive moving-fire option, rather than
+  // letting several stationary targets hide retreat. This only constructs the offers.
+  const defensiveFire = combat.find(c => c.id === "back-fire") || combat.find(moving);
+  const combatOffers = [...new Set([...combat.slice(0, 1), ...(defensiveFire ? [defensiveFire] : []), ...combat])];
+  const resources = valid.filter((c) => c.category === "pickup").sort((a, b) => supplyPriority(a, observation.player) - supplyPriority(b, observation.player));
+  const visibleThreat = observation.enemies.some(e => e.visible === true);
+  const routes = valid.filter((c) => c.category === "exploration").sort((a, b) => {
+    if (visibleThreat) {
+      const exposure = c => c.geometry.threatExposure;
+      const cover = Number(exposure(b)?.lineOfSightAtEndpoint === false) - Number(exposure(a)?.lineOfSightAtEndpoint === false);
+      const separation = Math.round(exposure(b)?.separationDelta ?? 0) - Math.round(exposure(a)?.separationDelta ?? 0);
+      if (cover || separation) return cover || separation;
+    }
+    return Number(b.id === "continue-route") - Number(a.id === "continue-route") ||
+      (a.route?.failures || 0) - (b.route?.failures || 0) || (a.route?.visits || 0) - (b.route?.visits || 0);
+  });
   const scans = valid.filter((c) => c.category === "scan" || c.category === "wait");
   // Disclosed candidate budgeting, not score adjustment or a rule-selected replacement action.
-  const budget = options.realtime ? 6 : 8; // Richer navigation prompts must still fit the live decision deadline.
-  const chosen = [...combat.slice(0, options.realtime ? 2 : 3), ...resources.slice(0, combat.length ? 1 : 2)];
+  const budget = options.realtime ? 6 : 8;
+  const urgentSupplies = resources.filter(c => supplyPriority(c, observation.player) <= 2).length;
+  const resourceSlots = visibleThreat ? Math.max(1, Math.min(2, urgentSupplies)) : 2;
+  const chosen = [...combatOffers.slice(0, options.realtime ? 2 : 3), ...resources.slice(0, resourceSlots)];
   const scanBudget = Math.min(scans.length, Math.max(0, budget - chosen.length - Math.min(routes.length, 2)));
   chosen.push(...routes.slice(0, Math.max(0, budget - chosen.length - scanBudget)), ...scans.slice(0, scanBudget));
   for (const c of [...routes, ...resources, ...combat]) if (chosen.length < budget && !chosen.includes(c)) chosen.push(c);
   const eligible = chosen.slice(0, budget);
+  for (const c of valid) if (!eligible.includes(c)) c.offerNote = "Not offered: survival-first action budget; defensive options and needed supplies take priority over keys and novelty.";
   const navigation = options.navigation?.summary(observation) || null;
   const steering = eligible.length ? steeringFrame(observation, options) : null;
   const sharedState = eligible.length ? choiceState(observation, eligible, memory, navigation, options) : "";
-  return { candidates: all, eligible, navigation, steering, decisionFormat, sharedState, requests: requestsFor(eligible, sharedState, decisionFormat) };
+  return { objective: PRIMARY_OBJECTIVE, objectives: SURVIVAL_OBJECTIVES, offerPolicy: OFFER_POLICY,
+    candidates: all, eligible, navigation, steering, decisionFormat, sharedState, requests: requestsFor(eligible, sharedState, decisionFormat) };
 }
 
 /** One compact, whitelisted observation plus per-action measured facts, not six repeated states. */
@@ -204,31 +237,34 @@ function choiceState(observation, eligible, memory, navigation, { realtime = fal
   const p = observation.player;
   const enemies = observation.enemies.filter((e) => e.visible === true).slice(0, 3);
   const pickups = observation.pickups.filter((e) => e.visible === true).slice(0, 3);
-  const describe = (e) => `${readable(e.kind)} ${bearing(e.bearingRight)} ${range(e.distance)}`;
+  const describe = (e) => `${readable(e.kind)} ${bearing(e.bearingRight).replace("to the ", "")} ${range(e.distance).replace("at ", "")}`;
   const text = [
-    "Goal: COMPLETE THE LEVEL: find and reach its exit. Kills or an empty room are NOT completion.",
+    GOAL_PROMPT,
     `Player: health ${p.health}, armor ${p.armor}, ${p.weapon}, ammo ${p.ammo}; keys ${[p.silverKey && "silver", p.goldKey && "gold"].filter(Boolean).join("+") || "none"}; ${p.grounded ? "grounded" : "airborne; gravity applies"}${p.inWater ? "; in water" : ""}.`,
     `Enemies: ${enemies.map(describe).join("; ") || "none observed"}; unseen areas are unknown.`,
     ...(pickups.length ? [`Pickups: ${pickups.map(describe).join("; ")}.`] : []),
   ];
-  if (navigation) text.push(`Memory: ${navigation.rememberedCells} cells, ${navigation.currentCellEntries} visits here, ${navigation.noProgressActions} actions without new area/contact, ${navigation.stationaryScans} stationary scans.${navigation.recovery ? " Loop detected." : ""}`);
+  if (enemies.length) text.push("Enemy estimates use the nearest observed threat.");
+  if (navigation) text.push(`Exploration: ${navigation.rememberedCells} cells, ${navigation.currentCellEntries} visits, ${navigation.noProgressActions} no-discovery actions, ${navigation.stationaryScans} stationary scans.${navigation.recovery && !underPressure(observation, memory) ? " Loop detected; survival first." : ""}`);
   if (steeringFrame(observation, { realtime, heldCandidate }).source === "held-course") text.push(COURSE_CONTEXT);
-  text.push(`Actions up to ${realtime ? 750 : 200} ms; limits/facts below. Geometry is estimated; hits and collection are not guaranteed. New cell does not mean exit.`);
+  text.push(`Actions up to ${realtime ? 750 : 200} ms; shorter limits below. Geometry is estimated; hits, cover and pickups are not guaranteed.`);
   for (const c of eligible) {
-    const facts = [`${Math.round(c.params.ticks * 1000 / TICK_HZ)}ms`];
+    const facts = c.params.ticks < (realtime ? LIVE_TICKS : ACTION_TICKS) ? [`${Math.round(c.params.ticks * 1000 / TICK_HZ)}ms`] : [];
     if (moving(c)) {
       facts.push(c.geometry.contact ? `touch ${c.geometry.contact}` : "clear floor");
-      if (c.route) facts.push(!c.route.destinationVisited ? "new cell" : c.route.sameCell ? "same cell" : `visited ${c.route.visits} times`);
-      if (c.route?.failures) facts.push(`${c.route.failures} failed tries`);
+      if (c.route) facts.push(!c.route.destinationVisited ? "new cell" : c.route.sameCell ? "same cell" : `visits ${c.route.visits}`);
+      if (c.route?.failures) facts.push(`failed ${c.route.failures}`);
     } else facts.push("stationary input");
     if (c.category === "scan") facts.push(c.headingInspected ? "heading inspected" : "heading not inspected");
     const exposed = c.geometry.threatExposure?.lineOfSightAtEndpoint;
-    if (exposed === true) facts.push("enemy LOS");
-    if (exposed === false) facts.push("enemy LOS blocked");
+    if (exposed === true) facts.push("LOS clear");
+    if (exposed === false) facts.push("LOS blocked");
+    if (c.geometry.threatExposure?.separationDelta > 5) facts.push("enemy farther");
+    if (c.geometry.threatExposure?.separationDelta < -5) facts.push("enemy closer");
     text.push(`${c.id}: ${facts.join(", ")}.`);
   }
   // Put core objective/state and every action's facts before optional recency/pacing context.
-  if (memory?.epoch === observation.epoch) text.push(`Last: ${memory.label}; displaced ${Math.round(memory.displacement)} units, lost ${memory.damage} health in the observed interval.`);
+  if (memory?.epoch === observation.epoch) text.push(`Last observed: ${memory.label}; moved ${Math.round(memory.displacement)} units, lost ${memory.damage} health.`);
   if (realtime) text.push(`Live: world continues during scoring. Currently holding: ${heldAction || "neutral input"}. Revalidate before applying.`);
   return text.join("\n");
 }
@@ -240,7 +276,7 @@ export function requestsFor(eligible, sharedState, decisionFormat = DEFAULT_DECI
   if (decisionFormat === "noul") return eligible.map((c) => ({ state: c.state, questions: structuredClone(NOUL_BASELINE_QUESTION) }));
   return [{ state: sharedState, questions: { action: {
     type: "choice",
-    instructions: "Which action best helps find and reach the level exit?",
+    instructions: `Which action best helps you ${PRIMARY_OBJECTIVE}? Exploration is secondary.`,
     criteria: Object.fromEntries(eligible.map((c) => [c.id, c.choiceText])),
   } } }];
 }

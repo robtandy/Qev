@@ -173,7 +173,7 @@ test("pausing releases the active command and invalidates the pending replacemen
 });
 
 test("delayed repeated-forward decisions keep the held course instead of chasing the old camera yaw", async () => {
-  const f = fixture(); f.agent.startLive();
+  const f = fixture(); f.state.enemies = []; f.agent.startLive(); // Isolate steering from threat-aware shortlisting.
   let pending = f.agent.score({ realtime: true });
   let index = f.agent.current.eligible.findIndex(c => c.id === "forward-left");
   assert.ok(index >= 0);
@@ -201,7 +201,7 @@ test("delayed repeated-forward decisions keep the held course instead of chasing
 
 for (const change of ["expired", "replaced", "pause-resume"]) {
   test(`${change} command does not supply a stale steering reference`, async () => {
-    const f = fixture(); f.agent.startLive();
+    const f = fixture(); f.state.enemies = []; f.agent.startLive();
     let pending = f.agent.score({ realtime: true });
     const index = f.agent.current.eligible.findIndex(c => c.id === "forward-left");
     f.resolveScore(index); await pending; f.agent.applyLive();
