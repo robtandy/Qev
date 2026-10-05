@@ -122,7 +122,7 @@ void Qev_WorldChanged(void) {
     epoch++; control_session++; tick = 0; paused = owned = booting = 1;
     remaining = 0; accumulator = 0; stop_reason = NULL;
     memset(generations, 0, sizeof(generations));
-    clear_action();
+    clear_action(); audio_pause(1); /* No old-world audio during loading/bootstrap. */
 }
 void Qev_EntityFreed(edict_t *e) {
     int slot = NUM_FOR_EDICT(e);

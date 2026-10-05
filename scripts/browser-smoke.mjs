@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { makeServer, root } from "./serve.mjs";
 import { DEMO } from "../src/demo-manifest.js";
 import { compareDecisions } from "./compare-decisions.mjs";
+import { beginAudioChecks, checkAudioPlayback } from "./browser-audio.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, timeout = 30_000) {
@@ -25,7 +26,7 @@ const runModel = explore || compare || process.argv.includes("--model");
 await mkdir(resolve(root, "build/browser-profile"), { recursive: true });
 const server = makeServer();
 await new Promise((r) => server.listen(8091, "127.0.0.1", r));
-const chrome = spawn(chromePath, ["--headless=new", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--enable-unsafe-webgpu", `--user-data-dir=${root}/build/browser-profile`, "--remote-debugging-port=9226", "about:blank"], { stdio: "ignore" });
+const chrome = spawn(chromePath, ["--headless=new", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--enable-unsafe-webgpu", "--autoplay-policy=document-user-activation-required", `--user-data-dir=${root}/build/browser-profile`, "--remote-debugging-port=9226", "about:blank"], { stdio: "ignore" });
 let ws, evaluate;
 const errors = [], requests = [];
 try {
@@ -107,6 +108,7 @@ try {
       ['pak0.pak','pak1.pak','pak2.pak'].every((name) => files.includes(name));
   `);
   assert.deepEqual(requests.filter((url) => /^https?:/.test(url) && !url.startsWith('http://127.0.0.1:8091/')), [], "automatic game startup makes no remote/model requests");
+  await beginAudioChecks({ check });
   await check("the header and browser title use the requested decision-model branding", `
     const header=document.querySelector('.masthead');
     return header.querySelector('h1').textContent==='Qev - quake + decision model' &&
@@ -279,6 +281,7 @@ try {
     for (let i = 0; i < 90 && !qev.engine.snapshot().player.grounded; i++) await qev.engine.frame();
     return qev.engine.snapshot().player.grounded && qev.engine.snapshot().paused;
   `);
+  await checkAudioPlayback({ evaluate, check, call, until });
   await evaluate(`
     window.originalModel = qev.agent.getModel;
     window.mockCalls = [];

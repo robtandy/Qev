@@ -298,6 +298,24 @@ from an identical saved offer for passive paired evaluation, without querying or
 world. Legacy `candidates[].state` prose remains in records for that baseline; it is not sent
 by the default choice controller. The exact `requests` array is authoritative.
 
+## Sound
+
+Quake's sound system is enabled; the old `-nosound` launch flag disabled it entirely.
+The pinned SDL 2.30.9 backend sends the bundled LibreQuake effects and ambience through
+Web Audio. Start and Step (including N) call `Engine.resumeAudio()` synchronously in the
+user gesture, before awaiting model inference, to satisfy browser autoplay policies.
+The app reports audio-device/permission errors without blocking game control. An audio
+resume promise never starts simulation, so completing after Stop cannot restart gameplay.
+
+Startup pauses SDL immediately after engine initialization and before yielding, including
+when the browser already permits autoplay. Native pause, finished/interrupted stepping,
+focus/tab loss, death, and world loading silence the mixer. The AudioContext can remain
+unlocked while SDL outputs zeros; automatic respawn can therefore restore sound when play
+resumes. Inspection stays silent while scoring, whereas continuous play keeps sound during
+inference. Slow playback changes physics pacing, not audio pitch. Audio is for the observer;
+no sound-derived enemy locations are added to model input. CD soundtrack playback is not
+implemented (`cd_null.c`); no additional game or music files are distributed.
+
 ## Clock and rendering
 
 `Qev_MainLoop` owns a 60 Hz fixed-tick accumulator instead of the original wall-delta
@@ -338,8 +356,8 @@ The JS agent rejects results older than 60 simulation ticks or 1.5 wall seconds,
 code checks the tick age/session again at application. A slow or failed inference cannot
 hold movement/fire indefinitely: leases expire to neutral input, not a world freeze.
 Browser tab hiding and focus loss interrupt Auto and freeze the engine. The demo starts
-on Hard with audio disabled; difficulty changes apply on map restart. Deterministic replay
-across sessions is not yet certified.
+stopped on Hard, with sound enabled during play; difficulty changes apply on map restart.
+Deterministic replay across sessions is not yet certified.
 These guarantees decouple policy cadence from simulation, not guarantee rendered FPS on
 resource-constrained devices.
 
@@ -398,7 +416,8 @@ view-relative combat/scans, rejection of expired or mismatched steering referenc
 validation, respawn completion/cancellation/failure races, binary decision presentation,
 newest-five selection, preservation of raw lifecycle/protocol data, the shared survival
 hierarchy, needed supplies ahead of keys, retreat/cover offers, pressure-aware scan guards,
-and unchanged model-choice authority.
+unchanged model-choice authority, browser audio resume/error handling, and late audio
+completion that cannot undo Stop.
 
 The Chromium check runs the real compiled engine with the automatic local-server demo.
 It checks the absence of an import UI (including at old asset-mode URLs), a real legacy
@@ -422,6 +441,13 @@ Cancel and Escape dismissal, absence of unsolicited network requests, explicit c
 loading real Laya, and keeping the world stopped after loading. Test-only console key binding sets health to zero: LibreQuake's
 `kill` command itself restarts immediately inside QuakeC and would bypass the observed-death
 path being tested. No diagnostic kill export is added to the production bridge.
+
+`scripts/browser-audio.mjs` checks the real SDL output under Chromium's activation-required
+autoplay policy. Trusted Start/Step clicks and the N shortcut resume a suspended context.
+The check samples buffers after the native callback, observing actual nonzero firing audio
+and zero output during Stop, inspection inference, map loading, and focus loss. It generates
+no test tones and injects no replacement samples. A simulated browser refusal verifies that
+game control and Stop remain usable. The main suite also runs live Laya with audio enabled.
 
 The optional LibreQuake encounter overlay keeps existing geometry and changes entity
 placement to put a single grunt and health pickup near the player. Its source resource

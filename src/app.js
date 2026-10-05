@@ -106,6 +106,15 @@ async function guard(fn) {
   catch (error) { stop(); showError(error); }
   finally { if (engine) poll(); else updateControls(); }
 }
+function playFromGesture(fn) {
+  // Resume synchronously within the click/key gesture, not after asynchronous scoring.
+  // Do not await it: a blocked audio promise must not hold or later restart gameplay.
+  if (engine) void engine.resumeAudio().catch(error => {
+    log(`Audio: ${error.message}`);
+    showError(new Error("Sound could not start. Check this tab's sound permissions, then Stop and Start to retry. " + error.message));
+  });
+  return guard(fn);
+}
 async function score() { await agent.score(); }
 async function step() { return stepper.step(); }
 function promptForModel() {
@@ -247,8 +256,8 @@ $("confirm-model-prompt").addEventListener("click", () => {
 });
 $("model").addEventListener("change", updateControls);
 $("pause").addEventListener("click", stop);
-$("step").addEventListener("click", () => guard(step));
-$("auto").addEventListener("click", () => guard(runAuto));
+$("step").addEventListener("click", () => playFromGesture(step));
+$("auto").addEventListener("click", () => playFromGesture(runAuto));
 for (const id of ["map", "difficulty"]) $(id).addEventListener("change", () => guard(loadSelectedMap));
 $("speed").addEventListener("change", () => guard(async () => engine?.speed(Number($("speed").value))));
 $("export").addEventListener("click", () => {

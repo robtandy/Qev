@@ -61,13 +61,26 @@ export class Engine {
     for (const file of data.files) module.FS.writeFile(`/id1/${file.name}`, file.bytes);
     module.FS.writeFile("/id1/autoexec.cfg", CONFIG);
     const engine = new Engine(module, () => fault);
-    try { module.callMain(["-heapsize", "65536", "-winsize", "640", "480", "-nosound", "+skill", String(difficulty), "+map", map]); }
-    catch (error) { throw fault || error; }
+    try {
+      module.callMain(["-heapsize", "65536", "-winsize", "640", "480", "+skill", String(difficulty), "+map", map]);
+      // Initialize SDL audio, but silence it before yielding—even when autoplay is allowed.
+      // Bootstrapping still advances until the stopped world is ready.
+      engine.pause();
+    } catch (error) { throw fault || error; }
     await engine.waitFor((s) => s.ready && s.map === map && s.difficulty === difficulty, 30_000);
     engine.pause();
     return engine;
   }
   constructor(module, getFault = () => null) { this.module = module; this.getFault = getFault; }
+  // SDL 2.30.9 exposes its Web Audio context on Module.SDL2. Call from a user
+  // gesture, before model inference awaits. This never starts/unpauses the game.
+  async resumeAudio() {
+    const { audioContext: context, audio } = this.module.SDL2 || {};
+    if (!context || !audio?.scriptProcessorNode || context.state === "closed") throw new Error("Game audio is unavailable. Check browser sound support and reload the page.");
+    if (context.state !== "running") await context.resume();
+    if (context.state !== "running") throw new Error("The browser kept game audio suspended.");
+    return true;
+  }
   snapshot() {
     const fault = this.getFault();
     if (fault) throw fault;

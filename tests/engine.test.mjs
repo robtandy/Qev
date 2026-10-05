@@ -14,6 +14,58 @@ test("fatal legacy stdout errors retain their cause and give demo-repair guidanc
   assert.equal(engineErrorFromLog("Warning: a non-fatal warning"), null);
 });
 
+function audioFixture(state = "suspended") {
+  const calls = [];
+  const context = { state, resume() { calls.push("resume"); context.state = "running"; return Promise.resolve(); } };
+  const engine = new Engine({ SDL2: { audioContext: context, audio: { scriptProcessorNode: {} } },
+    _qev_pause() { calls.push("pause"); }, _qev_auto() { assert.fail("audio must not start gameplay"); } });
+  return { engine, context, calls };
+}
+
+for (const state of ["suspended", "interrupted"]) {
+  test(`audio ${state} by the browser resumes within the gesture, without advancing the world`, async () => {
+    const { engine, calls } = audioFixture(state);
+    const result = engine.resumeAudio();
+    assert.deepEqual(calls, ["resume"], "resume() must be invoked before any await loses user activation");
+    assert.equal(await result, true);
+    assert.deepEqual(calls, ["resume"]);
+  });
+}
+
+test("running audio does not create or resume a second context", async () => {
+  const { engine, calls } = audioFixture("running");
+  assert.equal(await engine.resumeAudio(), true);
+  assert.deepEqual(calls, []);
+});
+
+test("absent, failed, or closed audio devices give actionable errors instead of silent success", async () => {
+  for (const module of [{}, { SDL2: {} }, { SDL2: { audioContext: { state: "running" } } }]) {
+    await assert.rejects(new Engine(module).resumeAudio(), /audio is unavailable.*reload/);
+  }
+  const { engine, calls } = audioFixture("closed");
+  await assert.rejects(engine.resumeAudio(), /audio is unavailable/);
+  assert.deepEqual(calls, []);
+});
+
+test("browser audio rejection or continued suspension is reported, with no gameplay side effects", async () => {
+  const { engine, context, calls } = audioFixture();
+  context.resume = () => Promise.reject(new Error("Autoplay blocked"));
+  await assert.rejects(engine.resumeAudio(), /Autoplay blocked/);
+  context.resume = () => Promise.resolve();
+  await assert.rejects(engine.resumeAudio(), /kept game audio suspended/);
+  assert.deepEqual(calls, []);
+});
+
+test("an audio unlock completing after Stop cannot resume simulation or undo native audio pause", async () => {
+  const { engine, context, calls } = audioFixture();
+  let finish;
+  context.resume = () => new Promise(resolve => { finish = () => { context.state = "running"; resolve(); }; });
+  const pending = engine.resumeAudio();
+  engine.pause(); finish();
+  assert.equal(await pending, true);
+  assert.deepEqual(calls, ["pause"]);
+});
+
 test("Hard is the default in both the engine and the initial difficulty selector", () => {
   assert.equal(DEFAULT_DIFFICULTY, 2);
   assert.equal(DIFFICULTIES[DEFAULT_DIFFICULTY], "Hard");
