@@ -1,11 +1,14 @@
 import { distance, prepareDecision, rankResponses, DEFAULT_DECISION_FORMAT, validateDecisionFormat, MAX_DECISION_AGE_TICKS, MAX_DECISION_AGE_MS } from "./decisions.js";
 import { ExplorationMemory } from "./navigation.js";
+import { DEFAULT_PRIORITY_ORDER, validatePriorityOrder } from "./objective.js";
 
 /** DOM-free lifecycle: frozen score/step inspection, or single-flight real-time decisions. */
 export class Agent {
-  constructor({ engine, getModel, onChange = () => {}, decisionFormat = DEFAULT_DECISION_FORMAT }) {
+  #priorityOrder;
+  constructor({ engine, getModel, onChange = () => {}, decisionFormat = DEFAULT_DECISION_FORMAT, priorityOrder = DEFAULT_PRIORITY_ORDER }) {
     // Fixed for this controller's lifetime: an in-flight response cannot change interpretation.
     Object.defineProperty(this, "decisionFormat", { value: validateDecisionFormat(decisionFormat), enumerable: true });
+    this.#priorityOrder = validatePriorityOrder(priorityOrder);
     this.engine = engine;
     this.getModel = getModel;
     this.onChange = onChange;
@@ -23,6 +26,16 @@ export class Agent {
     this.scoredModel = null;
   }
   get busy() { return !!this.inflight || this.executing; }
+  get priorityOrder() { return this.#priorityOrder; }
+  setPriorities(order) {
+    const next = validatePriorityOrder(order);
+    if (next.every((id, i) => id === this.#priorityOrder[i])) return false;
+    this.#priorityOrder = next;
+    // Invalidate even a frozen score: its observation may match, but its prompt no longer does.
+    // Historical requests/objectives retain the independent order captured when scored.
+    this.invalidate();
+    return true;
+  }
   invalidate() {
     this.generation++;
     this.liveSession = null;
@@ -74,7 +87,7 @@ export class Agent {
     const holding = this.active && before.actionTicksLeft > 0 && before.actionSerial === this.active.actionSerial && before.epoch === this.active.appliedAt.epoch;
     const heldCandidate = holding ? { ...this.active.eligible[this.active.selectedIndex], decisionId: this.active.id } : null;
     const heldAction = heldCandidate?.label || null;
-    const prepared = prepareDecision(before, (params) => this.engine.probe(params), this.memory, { realtime, heldAction, heldCandidate, navigation: this.navigation, decisionFormat: this.decisionFormat });
+    const prepared = prepareDecision(before, (params) => this.engine.probe(params), this.memory, { realtime, heldAction, heldCandidate, navigation: this.navigation, decisionFormat: this.decisionFormat, priorityOrder: this.priorityOrder });
     if (!prepared.eligible.length) throw new Error("No valid actions are available.");
     const record = {
       id: ++this.sequence, status: "scoring", mode: realtime ? "realtime" : "inspection", generation: this.generation,

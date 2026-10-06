@@ -36,7 +36,7 @@ export function decisionOutcome(record) {
   const before = record.appliedAt || record.before, after = record.after;
   return {
     status: decisionStatus(record), mode: record.mode,
-    objective: record.objective, objectives: record.objectives, offerPolicy: record.offerPolicy,
+    objective: record.objective, priorityOrder: record.priorityOrder, objectives: record.objectives, offerPolicy: record.offerPolicy,
     observationTick: record.before.tick, appliedTick: record.appliedAt?.tick,
     ageTicksAtApply: record.ageTicksAtApply, ageMsAtApply: record.ageMsAtApply,
     observedTicksSinceApply: after?.epoch === before.epoch ? after.tick - before.tick : null,

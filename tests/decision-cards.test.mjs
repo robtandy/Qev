@@ -127,6 +127,14 @@ test("the HTML keeps the card feed and compact controls without the old game pan
   const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
   assert.match(html, /<ol id="decisions"/);
   assert.match(html, /Last 5 · newest first/);
+  const priorities = html.match(/<aside class="priority-column"[\s\S]*?<\/aside>/)[0];
+  assert.match(priorities, /<h2>Priorities<\/h2>/);
+  assert.match(priorities, /Goal: SURVIVE · highest first/);
+  assert.match(priorities, /id="priorities" role="list"[^>]*aria-describedby="priority-hint"/);
+  assert.match(priorities, /Reordering stops play/);
+  assert.match(priorities, /survival-biased action offers stay fixed/);
+  assert.match(priorities, /id="priority-status"[^>]*role="status"/);
+  assert.match(priorities, /id="reset-priorities"[^>]*disabled/);
   const masthead = html.match(/<header class="masthead">([\s\S]*?)<\/header>/)[1];
   assert.match(masthead, /<img class="brand-logo" src="\/brand\/qev-logo\.svg" width="120" height="56" alt="QEV">/);
   assert.match(masthead, /<h1>quake played by a local decision model<\/h1>/);

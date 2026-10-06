@@ -3,7 +3,8 @@ import { Agent } from "./agent.js";
 import { Respawner } from "./respawn.js";
 import { DecisionCards } from "./decision-cards.js";
 import { Stepper } from "./stepper.js";
-import { PRIMARY_OBJECTIVE, SURVIVAL_OBJECTIVES } from "./objective.js";
+import { PRIMARY_OBJECTIVE, DEFAULT_PRIORITY_ORDER, validatePriorityOrder, objectivesFor } from "./objective.js";
+import { Priorities } from "./priorities.js";
 import { DEMO, DEMO_MAPS } from "./demo-manifest.js";
 import { loadDemo } from "./demo.js";
 
@@ -13,6 +14,8 @@ const modelSelected = () => ["laya", "kev-0.8b"].includes($("model").value);
 const modelHint = "Choose a model · selecting downloads it if needed.";
 let engine = null, agent = null, model = null, snapshot = null, respawner = null, stepper = null;
 let operation = "", loadingModel = null, autoToken = 0, auto = false, playMode = "inspection";
+let initialPriorityOrder = DEFAULT_PRIORITY_ORDER;
+const currentPriorityOrder = () => agent?.priorityOrder || initialPriorityOrder;
 const engineLines = [];
 let errorTimer;
 const json = (value) => JSON.stringify(value, null, 2);
@@ -28,9 +31,19 @@ function showError(error) {
   errorTimer = setTimeout(() => { $("error").hidden = true; }, 12_000);
 }
 const decisionCards = new DecisionCards($("decisions"), { onError: showError });
+const priorityPanel = new Priorities($("priorities"), { getOrder: currentPriorityOrder,
+  onChange: order => guard(() => setPriorities(order)), resetButton: $("reset-priorities"), announcement: $("priority-status") });
 function renderDecision() {
   decisionCards.render(agent?.history || []);
+  priorityPanel.render();
   updateControls();
+}
+function setPriorities(order) {
+  const next = validatePriorityOrder(order);
+  if (next.every((id, i) => id === currentPriorityOrder()[i])) return;
+  stop(); // Cancel Step/Auto and any pending respawn resume before invalidating old prompts.
+  if (agent) agent.setPriorities(next);
+  else { initialPriorityOrder = next; priorityPanel.render(); }
 }
 
 // Use the actual space left after wrapped controls, not a small fixed canvas-height cap.
@@ -178,7 +191,7 @@ async function startDemo() {
     updateControls();
     engine = await Engine.start({ canvas: $("game"), data, map: DEMO.map, difficulty: Number($("difficulty").value), onLog: log });
     document.title = pageTitle; // SDL initializes its own window title; keep the site's branding.
-    agent = new Agent({ engine, getModel: () => model, onChange: renderDecision });
+    agent = new Agent({ engine, getModel: () => model, onChange: renderDecision, priorityOrder: initialPriorityOrder });
     stepper = new Stepper(agent, updateControls);
     respawner = new Respawner({ engine, agent, getMode: () => playMode,
       onState(stage, job) {
@@ -288,7 +301,8 @@ $("auto").addEventListener("click", () => playFromGesture(runAuto));
 for (const id of ["map", "difficulty"]) $(id).addEventListener("change", () => guard(loadSelectedMap));
 $("speed").addEventListener("change", () => guard(async () => engine?.speed(Number($("speed").value))));
 $("export").addEventListener("click", () => {
-  const url = URL.createObjectURL(new Blob([json({ version: 4, decisionFormat: agent.decisionFormat, respawns: respawner?.count || 0, activeLevel: snapshot?.ready ? { map: snapshot.map, difficulty: snapshot.difficulty } : null, observation: snapshot, engineLog: engineLines.slice(), objective: PRIMARY_OBJECTIVE, objectives: SURVIVAL_OBJECTIVES, exploration: agent.navigation.inspect(), observationPolicy: "visibility-limited telemetry", controller: "200 units/s, 180 deg/s aim, 60 Hz; inspection 12 ticks; real-time leases up to 45 ticks / 1500 ms wall time; decisions at most 60 ticks / 1500 ms old", records: agent.history })], { type: "application/json" }));
+  const priorityOrder = currentPriorityOrder();
+  const url = URL.createObjectURL(new Blob([json({ version: 5, decisionFormat: agent.decisionFormat, respawns: respawner?.count || 0, activeLevel: snapshot?.ready ? { map: snapshot.map, difficulty: snapshot.difficulty } : null, observation: snapshot, engineLog: engineLines.slice(), objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), exploration: agent.navigation.inspect(), observationPolicy: "visibility-limited telemetry", controller: "200 units/s, 180 deg/s aim, 60 Hz; inspection 12 ticks; real-time leases up to 45 ticks / 1500 ms wall time; decisions at most 60 ticks / 1500 ms old", records: agent.history })], { type: "application/json" }));
   const link = document.createElement("a"); link.href = url; link.download = "qev-trace.json"; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
@@ -313,5 +327,5 @@ $("model").value = "";
 renderDecision();
 fitGame();
 // Diagnostic handles, not an externally supported API. Tests use the same engine/agent as the UI.
-window.qev = { get engine() { return engine; }, get agent() { return agent; }, get model() { return model; }, get respawner() { return respawner; }, get playMode() { return playMode; }, get engineLog() { return engineLines.slice(); }, pause: stop, score, step };
+window.qev = { get engine() { return engine; }, get agent() { return agent; }, get model() { return model; }, get respawner() { return respawner; }, get playMode() { return playMode; }, get priorityOrder() { return currentPriorityOrder(); }, get engineLog() { return engineLines.slice(); }, pause: stop, score, step };
 void guard(startDemo);

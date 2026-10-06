@@ -26,7 +26,9 @@ After initial setup, just run `npm run serve`.
 
 ## How it works
 
-The goal is **SURVIVE**: avoid harm, recover supplies, and handle threats. Exploration is secondary.
+The goal is **SURVIVE**. Default priorities: avoid harm, get supplies, handle threats, then explore.
+Reorder **Priorities** beside Decisions to change the model's prompt. Reordering stops play;
+safety checks and the action shortlist stay fixed.
 Qwasm runs Quake in WebAssembly. A decision model chooses short actions in a browser worker
 using visible game state and exploration memory—not screenshots or hidden map data.
 Qev revalidates each choice and applies bounded movement, aiming, and firing while the game

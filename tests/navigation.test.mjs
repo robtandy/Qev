@@ -21,9 +21,9 @@ test("survival is primary; empty rooms and kills do not complete the secondary l
   assert.equal(nav.summary(s).goalComplete, false);
   for (const r of result.requests) {
     assert.match(r.state, /Goal: SURVIVE/);
-    assert.match(r.state, /Explore.*only after survival needs/);
+    assert.match(r.state, /4\. Explore for supplies, routes and the exit/);
     assert.equal(r.questions.action.type, "choice");
-    assert.match(r.questions.action.instructions, /SURVIVE.*Exploration is secondary/);
+    assert.match(r.questions.action.instructions, /SURVIVE.*listed priorities, highest first/);
   }
   s.completed = true; s.epoch++;
   nav.observe(s);

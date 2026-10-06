@@ -31,6 +31,7 @@ export async function checkModelSelection({ evaluate, check, until }) {
     };
   })()`);
   try {
+    await evaluate("document.querySelector('[data-priority=get-supplies] [data-move=up]').click();modelSelectionTest.priorityOrder=[...qev.priorityOrder]");
     await evaluate("document.querySelector('#auto').click()");
     await check("Start without a model focuses the highlighted dropdown without downloading or playing", `
       return document.activeElement===document.querySelector('#model') && document.querySelector('#model').value==='' &&
@@ -145,6 +146,10 @@ export async function checkModelSelection({ evaluate, check, until }) {
     `);
     await change('backend', 'wasm'); await loadCount(6);
     await evaluate("document.querySelector('#cancel-model').click();modelSelectionTest.loads[5].reject(new DOMException('Aborted','AbortError'))"); await idle();
+    await check("model switches and backend reloads keep the user's configured priorities", `
+      return JSON.stringify(qev.priorityOrder)===JSON.stringify(modelSelectionTest.priorityOrder) &&
+        JSON.stringify(modelSelectionTest.oldDecision.priorityOrder)===JSON.stringify(modelSelectionTest.priorityOrder);
+    `);
     await check("normal cancellation rejection also leaves a retryable choice rather than an error", `
       return !qev.model && modelSelectionTest.loads[4].model.disposed===1 && document.querySelector('#model').value==='' &&
         document.querySelector('#model-status').textContent.includes('cancelled') && document.querySelector('#error').hidden;
@@ -156,6 +161,6 @@ export async function checkModelSelection({ evaluate, check, until }) {
   // Restore a pristine stopped map/empty history for the remaining browser tests.
   // Only this test fixture clears history; production model changes preserve it.
   await change('model', ''); await change('backend', 'auto');
-  await evaluate("qev.agent.history.length=0;qev.agent.invalidate();qev.engine.loadMap('lq_e0m6',2)");
+  await evaluate("document.querySelector('#reset-priorities').click();qev.agent.history.length=0;qev.agent.invalidate();qev.engine.loadMap('lq_e0m6',2)");
   await evaluate("qev.pause();document.activeElement.blur();delete window.modelSelectionTest");
 }

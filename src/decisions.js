@@ -1,4 +1,4 @@
-import { PRIMARY_OBJECTIVE, SURVIVAL_OBJECTIVES, GOAL_PROMPT, OFFER_POLICY } from "./objective.js";
+import { PRIMARY_OBJECTIVE, DEFAULT_PRIORITY_ORDER, validatePriorityOrder, objectivesFor, goalPrompt, OFFER_POLICY } from "./objective.js";
 
 export const ACTION_TICKS = 12;
 export const LIVE_TICKS = 45;
@@ -14,10 +14,10 @@ export function validateDecisionFormat(format) {
 export const NOUL_BASELINE_QUESTION = {
   favorable: {
     type: "noul",
-    instructions: `Does this action help the player ${PRIMARY_OBJECTIVE}, with exploration secondary?`,
+    instructions: `Does this action help the player ${PRIMARY_OBJECTIVE} according to the listed priorities, highest first?`,
     criteria: {
-      true: "avoids damage or hazards, reaches needed supplies, handles an immediate threat, or explores after survival needs are met",
-      false: "adds avoidable danger, ignores urgent health or ammo needs, wastes ammunition, or pursues keys, kills or novelty at the expense of survival",
+      true: "advances a higher-priority goal without needlessly sacrificing it for a lower-priority goal",
+      false: "ignores higher-priority needs or pursues a lower-priority goal at their expense",
     },
   },
 };
@@ -57,20 +57,20 @@ function steeringFrame(observation, { realtime = false, heldCandidate = null } =
     viewHeading: observation.player.yaw, sourceDecisionId: heldCourse ? heldCandidate.decisionId ?? null : null };
 }
 
-export function situation(observation, memory = null, exploration = null) {
+export function situation(observation, memory = null, exploration = null, priorityOrder = DEFAULT_PRIORITY_ORDER) {
   if (observation.completed) return "Level complete: the engine confirmed the exit. No further action is required.";
   const { player: p } = observation;
   const enemies = observation.enemies.filter((e) => e.visible === true);
   const pickups = observation.pickups.filter((e) => e.visible === true);
   const text = [
-    GOAL_PROMPT,
+    goalPrompt(priorityOrder),
     `Player: ${p.health <= 30 ? "low" : "moderate or high"} health (${p.health}), armor ${p.armor}, ${p.weapon}, ${p.ammo} ammo. Keys: ${[p.silverKey && "silver", p.goldKey && "gold"].filter(Boolean).join(" and ") || "none"}. ${p.grounded ? "Grounded." : "Airborne; gravity and momentum apply."}${p.inWater ? " In water." : ""}`,
-    enemies.length ? `Enemies observed: ${enemies.map((e) => `${readable(e.kind)} ${bearing(e.bearingRight)} ${range(e.distance)}`).join("; ")}.` : "No enemies are currently observed; unseen areas are unknown. Check for threats and needed supplies before exploring.",
+    enemies.length ? `Enemies observed: ${enemies.map((e) => `${readable(e.kind)} ${bearing(e.bearingRight)} ${range(e.distance)}`).join("; ")}.` : "No enemies are currently observed; unseen areas are unknown.",
     pickups.length ? `Visible pickups: ${pickups.map((e) => `${readable(e.kind)} ${bearing(e.bearingRight)} ${range(e.distance)}`).join("; ")}.` : "No pickups observed.",
   ];
   if (exploration) {
     text.push(`Exploration memory: ${exploration.rememberedCells} visited grid cells, ${exploration.currentCellEntries} entries into this cell; ${exploration.noProgressActions} actions without new area/contact, ${exploration.stationaryScans} consecutive stationary scans.`);
-    if (exploration.recovery) text.push(underPressure(observation, memory) ? "Repeated area/contact observations are not a failure while defending or recovering." : "Loop detected: change route only when survival needs allow.");
+    if (exploration.recovery) text.push(underPressure(observation, memory) ? "Repeated area/contact observations are not a failure while defending or recovering." : "Loop detected: weigh a different route against the listed priorities.");
   }
   if (memory?.epoch === observation.epoch) {
     text.push(`Last action: ${memory.label}; ${memory.displacement < 5 ? "almost no displacement" : "changed position"}; lost ${memory.damage} health ${memory.realtime ? "in the observed interval after applying it" : "during that action"}.`);
@@ -80,7 +80,7 @@ export function situation(observation, memory = null, exploration = null) {
 }
 
 /** Only observed telemetry and measured local history reach prose; never a hidden exit/map graph. */
-export function candidates(observation, probe, memory = null, { realtime = false, heldAction = null, heldCandidate = null, navigation = null } = {}) {
+export function candidates(observation, probe, memory = null, { realtime = false, heldAction = null, heldCandidate = null, navigation = null, priorityOrder = DEFAULT_PRIORITY_ORDER } = {}) {
   if (!observation.ready || !observation.alive || observation.completed) return [];
   const { player: p } = observation;
   const maxTicks = realtime ? LIVE_TICKS : ACTION_TICKS;
@@ -88,7 +88,7 @@ export function candidates(observation, probe, memory = null, { realtime = false
   const forward = [Math.cos(theta), Math.sin(theta)], left = [-Math.sin(theta), Math.cos(theta)];
   const summary = navigation?.summary(observation);
   const steering = steeringFrame(observation, { realtime, heldCandidate });
-  const context = situation(observation, memory, summary) + (steering.source === "held-course" ? ` ${COURSE_CONTEXT}` : "");
+  const context = situation(observation, memory, summary, priorityOrder) + (steering.source === "held-course" ? ` ${COURSE_CONTEXT}` : "");
   const options = [];
   function add(id, label, move, target = null, fire = false, yaw = p.yaw, category = "combat", ticks = maxTicks) {
     const params = {
@@ -195,7 +195,9 @@ export function candidates(observation, probe, memory = null, { realtime = false
 
 export function prepareDecision(observation, probe, memory, options = {}) {
   const decisionFormat = validateDecisionFormat(options.decisionFormat ?? DEFAULT_DECISION_FORMAT);
-  const all = candidates(observation, probe, memory, options);
+  const priorityOrder = validatePriorityOrder(options.priorityOrder === undefined ? DEFAULT_PRIORITY_ORDER : options.priorityOrder);
+  const decisionOptions = { ...options, priorityOrder };
+  const all = candidates(observation, probe, memory, decisionOptions);
   const valid = all.filter((c) => c.allowed);
   const combat = valid.filter((c) => c.category === "combat");
   // Keep one stationary firing choice and a defensive moving-fire option, rather than
@@ -227,25 +229,25 @@ export function prepareDecision(observation, probe, memory, options = {}) {
   for (const c of valid) if (!eligible.includes(c)) c.offerNote = "Not offered: survival-first action budget; defensive options and needed supplies take priority over keys and novelty.";
   const navigation = options.navigation?.summary(observation) || null;
   const steering = eligible.length ? steeringFrame(observation, options) : null;
-  const sharedState = eligible.length ? choiceState(observation, eligible, memory, navigation, options) : "";
-  return { objective: PRIMARY_OBJECTIVE, objectives: SURVIVAL_OBJECTIVES, offerPolicy: OFFER_POLICY,
+  const sharedState = eligible.length ? choiceState(observation, eligible, memory, navigation, decisionOptions) : "";
+  return { objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), offerPolicy: OFFER_POLICY,
     candidates: all, eligible, navigation, steering, decisionFormat, sharedState, requests: requestsFor(eligible, sharedState, decisionFormat) };
 }
 
 /** One compact, whitelisted observation plus per-action measured facts, not six repeated states. */
-function choiceState(observation, eligible, memory, navigation, { realtime = false, heldAction = null, heldCandidate = null }) {
+function choiceState(observation, eligible, memory, navigation, { realtime = false, heldAction = null, heldCandidate = null, priorityOrder }) {
   const p = observation.player;
   const enemies = observation.enemies.filter((e) => e.visible === true).slice(0, 3);
   const pickups = observation.pickups.filter((e) => e.visible === true).slice(0, 3);
   const describe = (e) => `${readable(e.kind)} ${bearing(e.bearingRight).replace("to the ", "")} ${range(e.distance).replace("at ", "")}`;
   const text = [
-    GOAL_PROMPT,
+    goalPrompt(priorityOrder),
     `Player: health ${p.health}, armor ${p.armor}, ${p.weapon}, ammo ${p.ammo}; keys ${[p.silverKey && "silver", p.goldKey && "gold"].filter(Boolean).join("+") || "none"}; ${p.grounded ? "grounded" : "airborne; gravity applies"}${p.inWater ? "; in water" : ""}.`,
     `Enemies: ${enemies.map(describe).join("; ") || "none observed"}; unseen areas are unknown.`,
     ...(pickups.length ? [`Pickups: ${pickups.map(describe).join("; ")}.`] : []),
   ];
   if (enemies.length) text.push("Enemy estimates use the nearest observed threat.");
-  if (navigation) text.push(`Exploration: ${navigation.rememberedCells} cells, ${navigation.currentCellEntries} visits, ${navigation.noProgressActions} no-discovery actions, ${navigation.stationaryScans} stationary scans.${navigation.recovery && !underPressure(observation, memory) ? " Loop detected; survival first." : ""}`);
+  if (navigation) text.push(`Exploration: ${navigation.rememberedCells} cells, ${navigation.currentCellEntries} visits, ${navigation.noProgressActions} no-discovery actions, ${navigation.stationaryScans} stationary scans.${navigation.recovery && !underPressure(observation, memory) ? " Loop detected." : ""}`);
   if (steeringFrame(observation, { realtime, heldCandidate }).source === "held-course") text.push(COURSE_CONTEXT);
   text.push(`Actions up to ${realtime ? 750 : 200} ms; shorter limits below. Geometry is estimated; hits, cover and pickups are not guaranteed.`);
   for (const c of eligible) {
@@ -276,7 +278,7 @@ export function requestsFor(eligible, sharedState, decisionFormat = DEFAULT_DECI
   if (decisionFormat === "noul") return eligible.map((c) => ({ state: c.state, questions: structuredClone(NOUL_BASELINE_QUESTION) }));
   return [{ state: sharedState, questions: { action: {
     type: "choice",
-    instructions: `Which action best helps you ${PRIMARY_OBJECTIVE}? Exploration is secondary.`,
+    instructions: `Which action best helps you ${PRIMARY_OBJECTIVE}? Follow the listed priorities, highest first.`,
     criteria: Object.fromEntries(eligible.map((c) => [c.id, c.choiceText])),
   } } }];
 }

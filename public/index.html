@@ -35,7 +35,7 @@
       <progress id="asset-progress" aria-label="Loading LibreQuake data" hidden></progress>
       <progress id="model-progress" aria-label="Loading decision model" hidden></progress>
     </section>
-    <section class="workbench" aria-label="Quake and decision inspector">
+    <section class="workbench" aria-label="Quake, priorities, and decision inspector">
       <div class="playback">
         <div class="controls">
           <button id="auto" class="primary" aria-pressed="false" title="Start real-time model control with sound" disabled>Start</button>
@@ -51,6 +51,13 @@
           <div id="screen-empty"><span class="crosshair">+</span><p>Your world starts here.</p><small id="empty-hint">Preparing map 6 · Great Greek Grinder…</small></div>
         </div>
       </div>
+      <aside class="priority-column" aria-label="Model priorities">
+        <div class="priority-head"><div><h2>Priorities</h2><p class="small muted">Goal: SURVIVE · highest first</p></div><button id="reset-priorities" type="button" aria-label="Reset priorities to their default order" disabled>Reset</button></div>
+        <p id="priority-hint" class="priority-hint">Drag or use ↑ ↓. Reordering stops play.</p>
+        <ol id="priorities" role="list" aria-label="Decision model priorities, highest first" aria-describedby="priority-hint"></ol>
+        <p class="priority-note">Prompt order only. Safety checks and survival-biased action offers stay fixed.</p>
+        <p id="priority-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+      </aside>
       <aside class="inspector" aria-label="Decision inspector">
         <div class="inspector-head"><div><h2>Decisions</h2><p class="small muted">Last 5 · newest first</p></div><button id="export" disabled>Export trace</button></div>
         <ol id="decisions" aria-label="Latest five decisions, newest first"><li class="empty">Choose a model above to load it, then Start or Step. Decisions will appear here.</li></ol>

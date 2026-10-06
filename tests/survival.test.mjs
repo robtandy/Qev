@@ -17,7 +17,7 @@ const navigation = (recovery = false) => ({ goal: { position: [140, 0, 24], labe
   inspected: () => false });
 
 for (const decisionFormat of ["choice", "noul"]) {
-  test(`${decisionFormat} uses the same ordered survival objectives, with exploration last`, () => {
+  test(`${decisionFormat} defaults to the same ordered survival objectives, with exploration last`, () => {
     const r = prepareDecision(state(), probe, null, { decisionFormat, realtime: true });
     assert.equal(PRIMARY_OBJECTIVE, "SURVIVE");
     assert.equal(r.objective, PRIMARY_OBJECTIVE);
@@ -28,22 +28,22 @@ for (const decisionFormat of ["choice", "noul"]) {
     for (const request of r.requests) {
       assert.ok(request.state.startsWith(GOAL_PROMPT));
       assert.equal(request.state.match(/SURVIVE/g).length, 1);
-      assert.match(request.state, /Never risk life for novelty, keys or kills/);
+      assert.match(request.state, /Follow this order when priorities compete/);
       const positions = SURVIVAL_OBJECTIVES.map(goal => request.state.indexOf(goal));
       assert.ok(positions.every((pos, i) => pos >= 0 && (!i || pos > positions[i - 1])));
       const question = request.questions.action || request.questions.favorable;
       assert.match(question.instructions, /SURVIVE/);
-      assert.match(question.instructions, /[Ee]xploration.*secondary/);
+      assert.match(question.instructions, /listed priorities, highest first/);
       assert.doesNotMatch(request.state, /COMPLETE THE LEVEL/);
     }
   });
 }
 
-test("an empty view does not claim safety or demand exploring before survival needs", () => {
+test("an empty view does not claim safety or override the explicit priority order", () => {
   const s = state(); s.enemies = [];
   const text = situation(s);
   assert.match(text, /unseen areas are unknown/);
-  assert.match(text, /Check for threats and needed supplies before exploring/);
+  assert.doesNotMatch(text, /before exploring|only after survival needs/);
   assert.doesNotMatch(text, /Keep exploring/);
   s.completed = true;
   assert.match(situation(s), /engine confirmed the exit/);
@@ -164,5 +164,5 @@ test("when there is no observed pressure, ordinary exploration and route continu
   assert.ok(r.eligible.some(c => c.id === "continue-route"));
   assert.ok(r.eligible.some(c => c.id === "forward"));
   assert.ok(r.eligible.some(c => c.category === "scan"));
-  assert.match(r.sharedState, /Explore.*exit only after survival needs/);
+  assert.match(r.sharedState, /4\. Explore for supplies, routes and the exit\./);
 });

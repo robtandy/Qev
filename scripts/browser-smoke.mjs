@@ -9,6 +9,7 @@ import { DEMO } from "../src/demo-manifest.js";
 import { compareDecisions } from "./compare-decisions.mjs";
 import { beginAudioChecks, checkAudioPlayback } from "./browser-audio.mjs";
 import { checkModelSelection } from "./browser-model-selection.mjs";
+import { checkPriorities } from "./browser-priorities.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, timeout = 30_000) {
@@ -27,9 +28,10 @@ const runModel = explore || compare || process.argv.includes("--model");
 await mkdir(resolve(root, "build/browser-profile"), { recursive: true });
 const server = makeServer();
 await new Promise((r) => server.listen(8091, "127.0.0.1", r));
-const chrome = spawn(chromePath, ["--headless=new", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--enable-unsafe-webgpu", "--autoplay-policy=document-user-activation-required", `--user-data-dir=${root}/build/browser-profile`, "--remote-debugging-port=9226", "about:blank"], { stdio: "ignore" });
+// Silence the test browser's output, not the app/mixer: audio regression checks still inspect real samples.
+const chrome = spawn(chromePath, ["--headless=new", "--enable-automation", "--mute-audio", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--enable-unsafe-webgpu", "--autoplay-policy=document-user-activation-required", `--user-data-dir=${root}/build/browser-profile`, "--remote-debugging-port=9226", "about:blank"], { stdio: "ignore" });
 let ws, evaluate;
-const errors = [], requests = [];
+const errors = [], requests = [], dragEvents = [];
 try {
   const page = await until(async () => (await (await fetch("http://127.0.0.1:9226/json/list")).json()).find((p) => p.type === "page"));
   ws = new WebSocket(page.webSocketDebuggerUrl);
@@ -42,6 +44,7 @@ try {
       if (message.error) p.reject(new Error(JSON.stringify(message.error))); else p.resolve(message.result);
     } else if (message.method === "Runtime.exceptionThrown") errors.push(message.params.exceptionDetails);
     else if (message.method === "Network.requestWillBeSent") requests.push(message.params.request.url);
+    else if (message.method === "Input.dragIntercepted") dragEvents.push(message.params.data);
   });
   const call = (method, params = {}) => new Promise((resolve, reject) => {
     const id = ++sequence; pending.set(id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params }));
@@ -55,6 +58,8 @@ try {
     assert.equal(await evaluate(`(async () => { ${expression} })()`), true, label);
     console.log(`PASS ${label}`);
   };
+  assert.ok((await call("Browser.getBrowserCommandLine")).arguments.includes("--mute-audio"), "Test browser must have audio output muted before running any checks.");
+  console.log("PASS test browser audio output is muted (--mute-audio)");
   await call("Runtime.enable"); await call("Page.enable"); await call("Network.enable");
   await call("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
   const navigate = async (path) => {
@@ -75,6 +80,11 @@ try {
       document.querySelector('#asset-status').textContent.includes('npm run setup:demo') &&
       document.querySelector('#retry-demo').getAttribute('href') === '/';
   `);
+  await check("priorities can be changed before the engine or a model has loaded", `
+    document.querySelector('[data-priority=get-supplies] [data-move=up]').click();
+    return !qev.engine && !qev.model && qev.priorityOrder[0]==='get-supplies' &&
+      document.querySelector('#priorities').firstElementChild.dataset.priority==='get-supplies' && document.querySelector('#auto').disabled;
+  `);
   await call("Network.setBlockedURLs", { urls: [] });
   await check("real legacy startup errors surface immediately with demo repair guidance", `
     const {Engine} = await import('/src/engine.js');
@@ -92,7 +102,7 @@ try {
   requests.length = 0;
   await evaluate("document.querySelector('#retry-demo').click()");
   await until(() => evaluate("!!window.qev?.engine"), 45_000);
-  await check("Reload demo recovers to the automatic paused level", `return qev.engine.snapshot().paused && document.querySelector('#retry-demo').hidden && document.querySelector('#error').hidden;`);
+  await check("Reload demo recovers to the automatic paused level and default priorities", `return qev.engine.snapshot().paused && qev.priorityOrder.join(',')==='avoid-harm,get-supplies,handle-threats,explore' && document.querySelector('#retry-demo').hidden && document.querySelector('#error').hidden;`);
   await checkDemoOnly("the loaded demo has no file picker or import-mode controls");
   // A bookmarked URL from the old UI must not resurrect an import path or disable startup.
   await navigate("/?assets=manual");
@@ -155,13 +165,25 @@ try {
   await call("Emulation.setDeviceMetricsOverride", { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   await sleep(100);
   await checkBrandLayout('the steel logo and tagline fit the laptop header');
-  await check("the larger game stays above the fold with decisions beside it", `
+  await check("the full-size game fits above the fold beside two narrower priorities/decisions columns", `
     const r=document.querySelector('.screen').getBoundingClientRect(), side=document.querySelector('.inspector').getBoundingClientRect();
-    if(scrollY!==0 || r.height<500 || r.width<900 || r.bottom>innerHeight || side.left<r.right || side.bottom>r.bottom+1 || document.documentElement.scrollWidth>innerWidth) throw new Error('Laptop layout: '+JSON.stringify({screen:r.toJSON(),inspector:side.toJSON(),viewport:[innerWidth,innerHeight],scrollY,setup:document.querySelector('.setup').getBoundingClientRect().toJSON(),playback:document.querySelector('.playback').getBoundingClientRect().toJSON()}));
+    const priorities=document.querySelector('.priority-column').getBoundingClientRect(), list=document.querySelector('#priorities');
+    if(scrollY!==0 || r.height<500 || r.width<800 || r.bottom>innerHeight ||
+      priorities.left<r.right || side.left<priorities.right || priorities.width>220 || side.width>280 ||
+      Math.abs(priorities.top-r.top)>1 || Math.abs(side.top-r.top)>1 ||
+      priorities.bottom>r.bottom+1 || side.bottom>r.bottom+1 || list.scrollHeight>list.clientHeight+1 ||
+      document.documentElement.scrollWidth>innerWidth) throw new Error('Laptop layout: '+JSON.stringify({screen:r.toJSON(),priorities:priorities.toJSON(),inspector:side.toJSON(),viewport:[innerWidth,innerHeight],scrollY,setup:document.querySelector('.setup').getBoundingClientRect().toJSON(),playback:document.querySelector('.playback').getBoundingClientRect().toJSON()}));
     return true;
   `);
   const compactDesktop = await call("Page.captureScreenshot", {format:'png'});
   await writeFile(resolve(root,'build/qev-cards-empty-desktop.png'),Buffer.from(compactDesktop.data,'base64'));
+  await call("Emulation.setDeviceMetricsOverride", { width: 1024, height: 900, deviceScaleFactor: 1, mobile: false });
+  await sleep(100);
+  await check('tablet layout keeps priorities and decisions adjacent beneath the complete game', `
+    const game=document.querySelector('.screen').getBoundingClientRect(), priorities=document.querySelector('.priority-column').getBoundingClientRect(), decisions=document.querySelector('.inspector').getBoundingClientRect();
+    return game.bottom<=innerHeight && priorities.top>=game.bottom && Math.abs(priorities.top-decisions.top)<1 &&
+      decisions.left>=priorities.right && document.documentElement.scrollWidth<=innerWidth;
+  `);
   await call("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await sleep(100);
   await checkBrandLayout('the mobile tagline wraps beside the logo rather than covering it or the links');
@@ -171,6 +193,12 @@ try {
     const r=document.querySelector('.screen').getBoundingClientRect();
     if(scrollY!==0 || r.bottom>innerHeight || document.documentElement.scrollWidth>innerWidth) throw new Error('Mobile layout: '+JSON.stringify({screen:r.toJSON(),viewport:[innerWidth,innerHeight],scrollY,setup:document.querySelector('.setup').getBoundingClientRect().toJSON(),playback:document.querySelector('.playback').getBoundingClientRect().toJSON()}));
     return true;
+  `);
+  await check('phone layout stacks the side panels with usable touch reorder buttons and no overflow', `
+    const game=document.querySelector('.screen').getBoundingClientRect(), priorities=document.querySelector('.priority-column').getBoundingClientRect(), decisions=document.querySelector('.inspector').getBoundingClientRect();
+    return priorities.top>=game.bottom && decisions.top>=priorities.bottom &&
+      [...document.querySelectorAll('.priority-controls button')].every(button=>{const r=button.getBoundingClientRect();return r.width>=32 && r.height>=32;}) &&
+      document.documentElement.scrollWidth<=innerWidth;
   `);
   const compactMobile = await call("Page.captureScreenshot", {format:'png'});
   await writeFile(resolve(root,'build/qev-cards-empty-mobile.png'),Buffer.from(compactMobile.data,'base64'));
@@ -189,6 +217,8 @@ try {
     return now.ready && now.alive && now.paused && now.tick === beforePause.tick && JSON.stringify(now.player.position) === JSON.stringify(beforePause.player.position);
   `);
   console.log("Initial full-level snapshot:", await evaluate("qev.engine.snapshot()"));
+  await checkPriorities({ evaluate, check, until, call, dragEvents });
+  assert.deepEqual(requests.filter(url=>/^https?:/.test(url) && !url.startsWith('http://127.0.0.1:8091/')),[], 'reordering priorities and inspecting fake decisions must not download a model');
   await check("only the game remains in its column; the old panels, picker, and human button are removed", `
     const column=document.querySelector('.game-column');
     return column.children.length===1 && column.firstElementChild.className==='screen' &&
@@ -650,16 +680,18 @@ try {
         document.querySelector('#auto').getAttribute('aria-pressed')==='false';
     `);
     console.log("Live model:", await evaluate("({backend:qev.model.info.backend,arch:qev.model.info.arch})"));
-    await evaluate("document.querySelector('#step').click()");
+    await evaluate("document.querySelector('[data-priority=get-supplies] [data-move=up]').click();document.querySelector('#step').click()");
     await until(() => evaluate("qev.agent.current?.status === 'executed' && qev.engine.snapshot().paused"), 180_000);
-    await check("one UI Step with real Kevala scores, executes twelve ticks, and stops", `
-      const r=qev.agent.current;
-      return r.responses.length===r.requests.length && r.ranking.every(s=>Number.isFinite(s.probability) && s.probability>=0 && s.probability<=1) &&
+    await check("one UI Step sends the reordered priorities to real Kevala, executes twelve ticks, and stops", `
+      const r=qev.agent.current, {goalPrompt}=await import('/src/objective.js');
+      return r.priorityOrder[0]==='get-supplies' && r.requests[0].state.startsWith(goalPrompt(qev.priorityOrder)) &&
+        r.responses.length===r.requests.length && r.ranking.every(s=>Number.isFinite(s.probability) && s.probability>=0 && s.probability<=1) &&
         r.after.tick-r.before.tick===12 && qev.engine.snapshot().paused && qev.playMode==='inspection';
     `);
     console.log("Live decision:", await evaluate("({ms:qev.agent.current.ms,inputs:qev.agent.current.requests.length,actions:qev.agent.current.eligible.length,chosen:qev.agent.current.eligible[qev.agent.current.selectedIndex].label,response:qev.agent.current.responses[0]})"));
     await writeFile(resolve(root, "build/live-trace.json"), await evaluate("JSON.stringify(qev.agent.current,null,2)"));
     const id = await evaluate("qev.agent.current.id");
+    await evaluate("document.querySelector('#reset-priorities').click()");
     await until(() => evaluate("!document.querySelector('#auto').disabled"));
     await evaluate(`window.liveSamples=[]; window.sampleTimer=setInterval(()=>{
       if(qev.agent.liveSession !== null && qev.agent.inflight) {

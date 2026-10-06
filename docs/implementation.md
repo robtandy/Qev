@@ -146,8 +146,9 @@ its fitted height when controls wrap or loading UI changes, preserving the rende
 content. It stays fully visible at tested 1366×768 and 390×844 initial viewports. Stats,
 navigation/explanation panels, the engine-log panel, and Play yourself button have been
 removed. A compact **Thanks to:** footer links Kev, Laya, Kevala, Qwasm, and LibreQuake.
-Desktop cards scroll within an inspector matched to the game height; narrow screens stack
-the feed.
+Two compact columns sit beside the game: **Priorities** (210 px) and **Decisions** (270 px,
+reduced from 340 px). Both match the game height, with bounded list scrolling. Tablets put
+the columns side by side beneath the game; phones stack them with larger reorder buttons.
 
 `src/decision-cards.js` displays only the latest five records, newest first. Cards are keyed
 by decision ID: adding one at the top preserves older expanded details, payload scroll, and
@@ -197,18 +198,41 @@ intent before recovery captures it. Controlled comparison trials suspend automat
 to keep their metrics scoped to one episode. These are diagnostic handles, not asset/import
 modes or user-facing bypasses of the game rules.
 
-## Survival objective, secondary exploration, and disclosed controller rules
+## Survival objective, reorderable priorities, and disclosed controller rules
 
-The primary model goal is **SURVIVE**. `src/objective.js` defines the same ordered priorities
-for both choice and noul requests, the running status, decision inspection, and trace exports:
+The overall model goal remains **SURVIVE**. `src/objective.js` defines stable priority IDs and
+shared wording for the UI, choice/noul requests, decision inspection, and trace exports.
+The default order is:
 
 1. Avoid damage and hazards; use cover or retreat.
 2. Recover needed health, armor, and ammunition without reckless exposure.
 3. Handle immediate threats while conserving ammunition.
-4. Explore for supplies, routes, and the exit only after survival needs.
+4. Explore for supplies, routes, and the exit.
 
-The prompt explicitly says not to risk life for novelty, keys, or kills. Survival is ongoing,
-not a completed-goal flag. Enemy absence, kills, movement, and new cells do not prove safety
+`src/priorities.js` shows the exact prompt wording beside Decisions. Drag/drop, up/down
+buttons, or Alt+Up/Down on a focused reorder button change the order; Reset restores the
+default. Keyboard focus is retained and changes are announced through a live status region.
+The order must be a complete permutation of the four known IDs; malformed, duplicate,
+unknown, or missing entries fail closed rather than being silently repaired. No custom text
+or new actions are introduced. Choices persist across map changes, deaths, and model loads
+for this page session; reloading the page returns to defaults.
+
+Both prompt formats now say to follow the listed order, highest first. Wording that always
+put exploration last (including "only after survival needs" and a permanently secondary
+exploration question) has been removed, so moving it up actually changes the prompt's
+ranking. SURVIVE remains the overall goal, not a reorderable fifth entry. **This changes
+prompt priorities, not the survival-biased action shortlist or native safety checks.** The
+panel explicitly discloses that distinction; model compliance or better play is not guaranteed.
+
+An `Agent` owns an immutable `priorityOrder` snapshot. `setPriorities()` validates before
+changing anything and invalidates the controller even for a previously scored frozen state.
+The UI also stops Auto/Step, releases input, and cancels any pending respawn resume. Replies
+scored under the old order cannot execute or restart play. Start or Step then sends the new
+order, without reloading model weights. A no-op move does not interrupt control. Records keep
+independent priority IDs, ordered objective text, and exact original requests; inspecting an
+old card never reconstructs it from the current list.
+
+Survival is ongoing, not a completed-goal flag. Enemy absence, kills, movement, and new cells do not prove safety
 or success. Only the engine's `completed` flag establishes secondary level completion; the
 legacy `exploration.goalComplete` field still means that flag, not a survival score. No
 hidden exit coordinates or unexplored-map percentage are inferred.
@@ -299,7 +323,7 @@ retaining the complete original response. Relative choice probabilities are not 
 survival/level-completion probabilities or generated explanations.
 
 The independent `favorable`/`noul` protocol remains an **explicit comparison baseline**, now
-using the same survival-first objective rather than the previous exit-first question.
+using the same overall survival goal and the order captured in each request rather than the previous exit-first question.
 An `Agent`'s `decisionFormat` is fixed at construction; there is no runtime fallback that
 reinterprets an invalid choice as a noul answer. `requestsFor` can produce either formulation
 from an identical saved offer for passive paired evaluation, without querying or moving the
@@ -381,7 +405,7 @@ selected candidate after fresh checks. Scoring itself still never executes an an
 The selected live horizon (up to 750 ms, shorter near obstacles), currently held action,
 and exploration/loop context are disclosed in each request. Live records cannot be executed through debug Step after pausing.
 
-A record contains the primary objective, ordered supporting objectives, shortlist policy,
+A record contains the primary objective, captured priority IDs/order, ordered supporting objectives, shortlist policy,
 before observation, mode, decision format, shared state, steering
 reference/source decision, exploration summary, all candidates (including geometry, ammo, resource-objective, and loop rejection
 reasons), eligible-ID-to-choice mapping, exact requests, untouched responses,
@@ -396,8 +420,9 @@ fail closed while preserving the response. Real-time Pause, reset, model change,
 completion, and human takeover discard late results; native session tokens also prevent
 old commands from crossing a pause/resume boundary in the same map.
 
-History is bounded to 50 records and can be exported as version-4 JSON, including the
-request's decision format. Browsing an old record does not make it executable. Default
+History is bounded to 50 records and can be exported as version-5 JSON. The top level contains
+the active `priorityOrder` and corresponding `objectives`; each record separately retains its
+own captured order, objective text, exact request, and decision format. Browsing an old record does not make it executable. Default
 selection uses `answers.action.choice`; displayed probabilities come from
 `answers.action.probabilities` by stable action ID. Only the explicit noul baseline ranks
 independent `answers.favorable.noul` values with input-order tie-breaking. Raw fields remain
@@ -423,7 +448,9 @@ trial-metric handling of cancellation and gravity, delayed-forward steering stab
 view-relative combat/scans, rejection of expired or mismatched steering references, difficulty
 validation, respawn completion/cancellation/failure races, binary decision presentation,
 newest-five selection, preservation of raw lifecycle/protocol data, the shared survival
-hierarchy, needed supplies ahead of keys, retreat/cover offers, pressure-aware scan guards,
+default hierarchy, all 24 priority permutations in both protocols, immutable priority snapshots,
+invalid/no-op reorder handling, priority-change cancellation during scoring/held input/Step,
+unchanged candidate offers, needed supplies ahead of keys, retreat/cover offers, pressure-aware scan guards,
 unchanged model-choice authority, browser audio resume/error handling, and late audio
 completion that cannot undo Stop.
 
@@ -449,12 +476,22 @@ highlight, direct loading on choice, backend reloads, absence of a Load button/d
 unsolicited network requests, and Start focusing the empty selector without downloading.
 A delayed fake loader exercises single-flight loading, cancellation (including a late success),
 failures, same-model retries, ignored late progress, and model changes during pending real-time
-inference. With `--model`, dropdown selection loads real Laya and leaves the world stopped. Test-only console key binding sets health to zero: LibreQuake's
+inference. With `--model`, dropdown selection loads real Laya and leaves the world stopped.
+`scripts/browser-priorities.mjs` checks button/keyboard reordering and native pointer drag/drop,
+focus/boundary controls, current versus historical request text, stale-reply rejection in
+inspection/Auto, interrupted Step execution, map-change persistence, and version-5 exports.
+Additional checks cover configuration before engine startup, page-reset defaults, and
+priority retention across model/backend changes.
+Desktop/tablet/phone checks verify the new columns and usable touch controls. A real Laya
+Step also sends a reordered priority list before the live trials return to defaults.
+Test-only console key binding sets health to zero: LibreQuake's
 `kill` command itself restarts immediately inside QuakeC and would bypass the observed-death
 path being tested. No diagnostic kill export is added to the production bridge.
 
-`scripts/browser-audio.mjs` checks the real SDL output under Chromium's activation-required
-autoplay policy. Trusted Start/Step clicks and the N shortcut resume a suspended context.
+All Chromium tests launch with **`--mute-audio`**, verified through CDP before any checks,
+so test playback is silent on the host. This does not disable normal gameplay sound.
+`scripts/browser-audio.mjs` still checks the real SDL buffers internally under Chromium's
+activation-required autoplay policy. Trusted Start/Step clicks and the N shortcut resume a suspended context.
 The check samples buffers after the native callback, observing actual nonzero firing audio
 and zero output during Stop, inspection inference, map loading, and focus loss. It generates
 no test tones and injects no replacement samples. A simulated browser refusal verifies that
