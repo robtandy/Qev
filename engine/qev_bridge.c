@@ -15,6 +15,8 @@
 #define QEV_MAX_AGE 60
 
 static int epoch = 1, tick = 0, paused = 1, owned = 1, booting = 1;
+static int assistance = 1, relative_input = 0;
+static float input_forward = 0, input_side = 0, input_yaw_rate = 0, input_pitch_rate = 0;
 static int remaining = 0, lease = 0, target_slot = -1, target_generation = 0, firing = 0;
 static int control_session = 0, action_serial = 0, action_ticks = 0;
 static int generations[MAX_EDICTS];
@@ -110,6 +112,7 @@ static edict_t *valid_target(int slot, int generation) {
 }
 static void clear_action(void) {
     lease = 0; lease_deadline = 0; target_slot = -1; firing = 0; move_x = move_y = 0;
+    relative_input = 0; input_forward = input_side = input_yaw_rate = input_pitch_rate = 0;
     Qev_ClearKeys();
 }
 static void cancel_action(const char *reason) {
@@ -237,11 +240,23 @@ static void seen_json(seen_t *list, int count) {
         center(EDICT_NUM(slot), pos);
         VectorSubtract(pos, eye, d);
         if (i) append(",");
-        append("{\"slot\":%d,\"generation\":%d,\"kind\":", slot, generations[slot]);
-        quoted(list[i].kind);
-        append(",\"position\":"); vector_json(pos);
-        append(",\"distance\":%.2f,\"bearingRight\":%.2f,\"visible\":true}", list[i].distance,
-            -angle_delta(atan2f(d[1], d[0])*180/M_PI, cl.viewangles[YAW]));
+        append("{");
+        if (assistance) append("\"slot\":%d,\"generation\":%d,", slot, generations[slot]);
+        append("\"kind\":"); quoted(list[i].kind);
+        if (assistance) {
+            append(",\"position\":"); vector_json(pos);
+            append(",\"distance\":%.2f,\"bearingRight\":%.2f", list[i].distance,
+                -angle_delta(atan2f(d[1], d[0])*180/M_PI, cl.viewangles[YAW]));
+        } else {
+            /* A semantic sensing concession, not image perception. Do not expose IDs,
+               coordinates or precise angles/ranges in the assistance-off snapshot. */
+            float yaw = angle_delta(atan2f(d[1], d[0])*180/M_PI, cl.viewangles[YAW]);
+            float pitch = -atan2f(d[2], sqrtf(d[0]*d[0] + d[1]*d[1]))*180/M_PI - cl.viewangles[PITCH];
+            append(",\"bearing\":"); quoted(yaw > 5 ? "left" : yaw < -5 ? "right" : "ahead");
+            append(",\"elevation\":"); quoted(pitch < -5 ? "above" : pitch > 5 ? "below" : "level");
+            append(",\"range\":"); quoted(list[i].distance < 128 ? "nearby" : list[i].distance < 512 ? "medium range" : "far away");
+        }
+        append(",\"visible\":true}");
     }
     append("]");
 }
@@ -251,8 +266,9 @@ EMSCRIPTEN_KEEPALIVE const char *qev_snapshot(void) {
     const char *kind;
     vec3_t d, pos;
     used = 0;
-    append("{\"version\":1,\"epoch\":%d,\"tick\":%d,\"ready\":%s,\"paused\":%s,\"remaining\":%d,\"owned\":%s",
+    append("{\"version\":2,\"epoch\":%d,\"tick\":%d,\"ready\":%s,\"paused\":%s,\"remaining\":%d,\"owned\":%s",
         epoch, tick, ready() ? "true" : "false", paused ? "true" : "false", remaining, owned ? "true" : "false");
+    append(",\"assistance\":"); quoted(assistance ? "assisted" : "unassisted");
     append(",\"controlSession\":%d,\"actionSerial\":%d,\"actionTicks\":%d,\"actionTicksLeft\":%d,\"stopReason\":", control_session, action_serial, action_ticks, lease);
     if (stop_reason) quoted(stop_reason); else append("null");
     if (!ready()) { append("}"); return json; }
@@ -261,12 +277,14 @@ EMSCRIPTEN_KEEPALIVE const char *qev_snapshot(void) {
     append(",\"alive\":%s,\"completed\":%s,\"player\":{\"health\":%d,\"armor\":%d,\"ammo\":%d,\"weapon\":",
         player()->v.health > 0 ? "true" : "false", cl.intermission ? "true" : "false", cl.stats[STAT_HEALTH], cl.stats[STAT_ARMOR], cl.stats[STAT_AMMO]);
     quoted(weapon_name(cl.stats[STAT_ACTIVEWEAPON]));
-    append(",\"shells\":%d,\"nails\":%d,\"rockets\":%d,\"cells\":%d,\"position\":",
+    append(",\"shells\":%d,\"nails\":%d,\"rockets\":%d,\"cells\":%d",
         cl.stats[STAT_SHELLS], cl.stats[STAT_NAILS], cl.stats[STAT_ROCKETS], cl.stats[STAT_CELLS]);
-    vector_json(player()->v.origin);
-    append(",\"yaw\":%.3f,\"pitch\":%.3f,\"grounded\":%s,\"inWater\":%s,\"silverKey\":%s,\"goldKey\":%s}",
-        cl.viewangles[YAW], cl.viewangles[PITCH], cl.onground ? "true" : "false", cl.inwater ? "true" : "false",
-        cl.items & IT_KEY1 ? "true" : "false", cl.items & IT_KEY2 ? "true" : "false");
+    if (assistance) {
+        append(",\"position\":"); vector_json(player()->v.origin);
+        append(",\"yaw\":%.3f,\"pitch\":%.3f,\"grounded\":%s,\"inWater\":%s",
+            cl.viewangles[YAW], cl.viewangles[PITCH], cl.onground ? "true" : "false", cl.inwater ? "true" : "false");
+    }
+    append(",\"silverKey\":%s,\"goldKey\":%s}", cl.items & IT_KEY1 ? "true" : "false", cl.items & IT_KEY2 ? "true" : "false");
     for (i = 2; i < sv.num_edicts && i < MAX_EDICTS; i++) {
         edict_t *e = EDICT_NUM(i);
         if (e->free || !e->v.modelindex) continue;
@@ -283,6 +301,7 @@ EMSCRIPTEN_KEEPALIVE const char *qev_snapshot(void) {
 EMSCRIPTEN_KEEPALIVE const char *qev_probe(float dx, float dy, int slot, int generation, int ticks) {
     probe_t p;
     edict_t *target;
+    if (!assistance) return "{\"error\":\"Geometry probes are disabled while assistance is off\"}";
     used = 0;
     if (!ready() || ticks < 1 || ticks > QEV_LIVE_TICKS || !isfinite(dx) || !isfinite(dy) || fabsf(dx) > 1.01f || fabsf(dy) > 1.01f) return "{\"error\":\"Invalid probe\"}";
     p = probe(dx, dy, QEV_SPEED * ticks * QEV_DT);
@@ -301,6 +320,17 @@ EMSCRIPTEN_KEEPALIVE void qev_pause(void) {
     control_session++;
     paused = owned = 1; remaining = 0; accumulator = 0; clear_action(); audio_pause(1);
 }
+EMSCRIPTEN_KEEPALIVE int qev_assistance(int enabled) {
+    if (enabled != 0 && enabled != 1) return 0;
+    if (assistance == enabled) return 1;
+    qev_pause();
+    assistance = enabled;
+    /* New observation/control epoch, NOT a map restart or a reset of game time.
+       Prevent even an on/off/on toggle from replaying old paused native actions. */
+    epoch++;
+    stop_reason = "Assistance changed.";
+    return 1;
+}
 EMSCRIPTEN_KEEPALIVE int qev_play(void) {
     if (!ready()) return 0;
     control_session++;
@@ -317,7 +347,7 @@ EMSCRIPTEN_KEEPALIVE int qev_speed(float scale) {
 /* Inputs are numeric and bounded; no model-generated console strings are accepted. */
 static int set_action(float dx, float dy, int slot, int generation, float yaw, float pitch, int attack, int ticks) {
     probe_t p;
-    if (!ready() || player()->v.health <= 0 || cl.intermission ||
+    if (!assistance || !ready() || player()->v.health <= 0 || cl.intermission ||
         ticks < 1 || ticks > QEV_LIVE_TICKS || !isfinite(dx) || !isfinite(dy) || !isfinite(yaw) || !isfinite(pitch) ||
         dx*dx + dy*dy > 1.001f || fabsf(yaw) > 720 || pitch < -70 || pitch > 80 || (attack != 0 && attack != 1)) return 0;
     if (slot >= 0 && !valid_target(slot, generation)) return 0;
@@ -329,6 +359,24 @@ static int set_action(float dx, float dy, int slot, int generation, float yaw, f
     move_x = dx; move_y = dy; target_slot = slot; target_generation = generation;
     aim_yaw = yaw; aim_pitch = pitch; firing = attack;
     lease = ticks; action_serial++; action_ticks = 0; key_dest = key_game;
+    return 1;
+}
+/* Relative, unassisted input: no entity target, route query, ammo gate or danger veto. */
+static int set_input(float forward, float side, float yaw_rate, float pitch_rate, int attack, int ticks) {
+    if (assistance || !ready() || player()->v.health <= 0 || cl.intermission ||
+        ticks < 1 || ticks > QEV_LIVE_TICKS || !isfinite(forward) || !isfinite(side) || !isfinite(yaw_rate) || !isfinite(pitch_rate) ||
+        forward*forward + side*side > 1.001f || fabsf(yaw_rate) > QEV_TURN || fabsf(pitch_rate) > QEV_TURN || (attack != 0 && attack != 1)) return 0;
+    clear_action(); stop_reason = NULL;
+    relative_input = 1; input_forward = forward; input_side = side;
+    input_yaw_rate = yaw_rate; input_pitch_rate = pitch_rate; firing = attack;
+    lease = ticks; action_serial++; action_ticks = 0; key_dest = key_game;
+    return 1;
+}
+EMSCRIPTEN_KEEPALIVE int qev_input_action(int expected_epoch, int expected_tick, float forward, float side,
+    float yaw_rate, float pitch_rate, int attack, int ticks) {
+    if (!paused || remaining || epoch != expected_epoch || tick != expected_tick || ticks > 12) return 0;
+    if (!set_input(forward, side, yaw_rate, pitch_rate, attack, ticks)) return 0;
+    remaining = ticks; owned = paused = 1; accumulator = 0; audio_pause(0);
     return 1;
 }
 EMSCRIPTEN_KEEPALIVE int qev_action(int expected_epoch, int expected_tick, float dx, float dy,
@@ -351,6 +399,14 @@ EMSCRIPTEN_KEEPALIVE int qev_live_action(int expected_epoch, int observed_tick, 
         observed_tick < 0 || observed_tick > tick || tick - observed_tick > QEV_MAX_AGE) return 0;
     if (!set_action(dx, dy, slot, generation, yaw, pitch, attack, ticks)) return 0;
     /* Replacing a command must NOT reset the simulation accumulator or freeze the world. */
+    lease_deadline = Sys_FloatTime() + 1.5;
+    return 1;
+}
+EMSCRIPTEN_KEEPALIVE int qev_live_input(int expected_epoch, int observed_tick, int session, float forward, float side,
+    float yaw_rate, float pitch_rate, int attack, int ticks) {
+    if (paused || !owned || remaining || session != control_session || epoch != expected_epoch ||
+        observed_tick < 0 || observed_tick > tick || tick - observed_tick > QEV_MAX_AGE) return 0;
+    if (!set_input(forward, side, yaw_rate, pitch_rate, attack, ticks)) return 0;
     lease_deadline = Sys_FloatTime() + 1.5;
     return 1;
 }
@@ -381,6 +437,19 @@ void Qev_ApplyInput(usercmd_t *cmd) {
     probe_t p;
     Qev_Attack(0);
     if (!ready() || lease <= 0 || player()->v.health <= 0) return;
+    if (relative_input) {
+        if (assistance) { cancel_action("Input mode changed."); return; }
+        /* Ordinary view-relative input; physics decides what happens. Firing neither
+           knows nor requires a visible target, clear line of fire, or ammunition. */
+        cl.viewangles[YAW] = anglemod(cl.viewangles[YAW] + input_yaw_rate * QEV_DT);
+        cl.viewangles[PITCH] = clampf(cl.viewangles[PITCH] + input_pitch_rate * QEV_DT, -70, 80);
+        V_StopPitchDrift();
+        cmd->forwardmove = QEV_SPEED * input_forward;
+        cmd->sidemove = QEV_SPEED * input_side;
+        Qev_Attack(firing); action_ticks++;
+        return;
+    }
+    if (!assistance) { cancel_action("Input mode changed."); return; }
     if (firing && (cl.stats[STAT_AMMO] <= 0 || cl.stats[STAT_ACTIVEWEAPON] == IT_AXE)) { cancel_action("Firing action no longer has usable ammunition."); return; }
     if (target_slot >= 0) {
         target = valid_target(target_slot, target_generation);

@@ -38,6 +38,7 @@ main { max-width:1920px; margin:auto; padding:0 16px 10px; }
 .model-setting.needs-selection { color:var(--accent); }
 .model-setting.needs-selection select { border-color:var(--accent); box-shadow:0 0 0 2px #c6f58233; background:#212c1b; }
 .backend-setting { width:112px; }
+.assistance-setting { width:178px; }
 .setup-status { display:flex; flex-wrap:wrap; justify-content:space-between; gap:3px 16px; margin-top:5px; font-size:.65rem; color:var(--muted); }
 .setup-status a { margin-left:8px; }
 .setup progress { display:block; margin-top:6px; }
@@ -115,5 +116,5 @@ pre { margin:0; font:10px/1.6 var(--mono); white-space:pre-wrap; overflow-wrap:a
 .credits a:hover { color:var(--accent); text-decoration:underline; }
 @media(max-width:1150px) { .workbench { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } .game-column { grid-column:1/-1; } .inspector,.priority-column { height:auto; } #decisions,#priorities { overflow:visible; } }
 @media(max-width:600px) { .workbench { grid-template-columns:1fr; } .priority-item { grid-template-columns:16px minmax(0,1fr) 34px; } .priority-controls button { width:34px; height:32px; } }
-@media(max-width:600px) { main { padding:0 8px 10px; } .masthead { padding:7px 8px; gap:10px; } .brand { gap:8px; } .brand-logo { width:92px; } .brand h1 { font-size:.78rem; line-height:1.35; } .header-links { gap:10px; } .setup { padding:6px 8px; } .map-setting { flex-basis:200px; max-width:none; } .difficulty-setting { width:100px; } .setup-row { gap:5px; } .model-setting { width:100%; } .backend-setting { width:107px; } .setup-status { display:grid; } .controls { gap:5px; } .controls button { padding:7px; font-size:.71rem; } .controls label { margin-left:0; } kbd { display:none; } #status { font-size:.69rem; } #clock { display:none; } }
+@media(max-width:600px) { main { padding:0 8px 10px; } .masthead { padding:7px 8px; gap:10px; } .brand { gap:8px; } .brand-logo { width:92px; } .brand h1 { font-size:.78rem; line-height:1.35; } .header-links { gap:10px; } .setup { padding:6px 8px; } .map-setting { flex-basis:200px; max-width:none; } .difficulty-setting { width:100px; } .setup-row { gap:5px; } .model-setting { width:100%; } .backend-setting { width:107px; } .assistance-setting { width:168px; } .setup-status { display:grid; } .controls { gap:5px; } .controls button { padding:7px; font-size:.71rem; } .controls label { margin-left:0; } kbd { display:none; } #status { font-size:.69rem; } #clock { display:none; } }
 @media(prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }

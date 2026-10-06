@@ -1,4 +1,5 @@
 import { DEMO_SETUP_HELP } from "./demo-manifest.js";
+import { validateAssistance } from "./assistance.js";
 
 // Qwasm's Sys_Error prints to stdout then exits; this does not always call onAbort.
 export function engineErrorFromLog(message) {
@@ -52,7 +53,7 @@ export class Engine {
       print: report, printErr: report, onAbort: (message) => { fault ||= new Error(`Quake stopped: ${message}`); },
       locateFile: (file) => `/engine/${file}`,
     });
-    if (typeof module._qev_auto !== "function" || typeof module._qev_live_action !== "function" || typeof module._qev_new_game !== "function") throw new Error("Engine build is out of date. Run npm run build:engine, then reload.");
+    if (["_qev_auto", "_qev_live_action", "_qev_new_game", "_qev_assistance", "_qev_input_action", "_qev_live_input"].some(name => typeof module[name] !== "function")) throw new Error("Engine build is out of date. Run npm run build:engine, then reload.");
     module.hideConsole = () => {};
     module.showConsole = () => onLog(fault ? "Quake stopped. Correct the error above, then reload the page." : "Quake console opened. Use the game canvas when playing manually.");
     module.captureMouse = () => {}; // pointer lock is only requested by an explicit canvas click
@@ -86,6 +87,15 @@ export class Engine {
     if (fault) throw fault;
     return JSON.parse(this.module.UTF8ToString(this.module._qev_snapshot()));
   }
+  setAssistance(mode) {
+    validateAssistance(mode);
+    const before = this.snapshot();
+    if (before.assistance === mode) return before;
+    if (!this.module._qev_assistance(mode === "assisted" ? 1 : 0)) throw new Error("Could not change assistance mode.");
+    const after = this.snapshot();
+    if (after.assistance !== mode || !after.paused || after.remaining) throw new Error("Assistance mode did not change safely.");
+    return after;
+  }
   probe({ dx, dy, slot, generation, ticks = 12 }) {
     return JSON.parse(this.module.UTF8ToString(this.module._qev_probe(dx, dy, slot, generation, ticks)));
   }
@@ -95,9 +105,13 @@ export class Engine {
     return session;
   }
   applyLive(p, session) {
-    const values = [p.epoch, p.tick, session, p.dx, p.dy, p.slot, p.generation, p.yaw, p.pitch, p.fire ? 1 : 0, p.ticks];
+    if (p.input !== undefined && p.input !== "relative") throw new Error("Unknown input type.");
+    const relative = p.input === "relative";
+    const values = relative
+      ? [p.epoch, p.tick, session, p.forward, p.side, p.yawRate, p.pitchRate, p.fire ? 1 : 0, p.ticks]
+      : [p.epoch, p.tick, session, p.dx, p.dy, p.slot, p.generation, p.yaw, p.pitch, p.fire ? 1 : 0, p.ticks];
     if (values.some((v) => !Number.isFinite(v))) throw new Error("Invalid real-time action parameters.");
-    return !!this.module._qev_live_action(...values);
+    return !!(relative ? this.module._qev_live_input(...values) : this.module._qev_live_action(...values));
   }
   pause() { this.module._qev_pause(); }
   play() {
@@ -117,9 +131,13 @@ export class Engine {
     throw new Error("Quake did not finish the requested operation. Check the engine log.");
   }
   async act(p) {
-    const values = [p.epoch, p.tick, p.dx, p.dy, p.slot, p.generation, p.yaw, p.pitch, p.fire ? 1 : 0, p.ticks];
+    if (p.input !== undefined && p.input !== "relative") throw new Error("Unknown input type.");
+    const relative = p.input === "relative";
+    const values = relative
+      ? [p.epoch, p.tick, p.forward, p.side, p.yawRate, p.pitchRate, p.fire ? 1 : 0, p.ticks]
+      : [p.epoch, p.tick, p.dx, p.dy, p.slot, p.generation, p.yaw, p.pitch, p.fire ? 1 : 0, p.ticks];
     if (values.some((v) => !Number.isFinite(v))) throw new Error("Invalid action parameters.");
-    if (!this.module._qev_action(...values)) throw new Error("Action rejected: the world, target, ammo, or local route changed. Score again.");
+    if (!(relative ? this.module._qev_input_action(...values) : this.module._qev_action(...values))) throw new Error("Action rejected: the world, input mode, or action validation changed. Score again.");
     return this.waitFor((s) => s.epoch !== p.epoch || !s.ready || s.remaining === 0);
   }
   async frame() {

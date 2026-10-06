@@ -13,7 +13,7 @@ export async function checkPriorities({ evaluate, check, until, call, dragEvents
         [...row.querySelectorAll('button')].every(button=>button.type==='button' && button.getAttribute('aria-label').startsWith('Move '))) &&
       rows[0].querySelector('[data-move="up"]').disabled && rows.at(-1).querySelector('[data-move="down"]').disabled &&
       document.querySelector('#reset-priorities').disabled && document.querySelector('#priority-hint').textContent.includes('Reordering stops play') &&
-      document.querySelector('.priority-note').textContent.includes('survival-biased action offers stay fixed');
+      document.querySelector('.priority-note').textContent.includes('geometry/GPS, aim and tactical offers');
   `);
   await evaluate("document.querySelector('[data-priority=explore] [data-move=up]').focus({preventScroll:true})");
   await up('explore');
@@ -157,9 +157,9 @@ export async function checkPriorities({ evaluate, check, until, call, dragEvents
       try {document.querySelector('#export').click();}
       finally {URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}
     })()`);
-    await check("version-5 traces distinguish the active priority order from each decision's original order", `
+    await check("version-6 traces distinguish the active priority order from each decision's original order", `
       const trace=await priorityTest.exported, {objectivesFor}=await import('/src/objective.js');
-      return trace.version===5 && JSON.stringify(trace.priorityOrder)===JSON.stringify(qev.priorityOrder) &&
+      return trace.version===6 && JSON.stringify(trace.priorityOrder)===JSON.stringify(qev.priorityOrder) &&
         JSON.stringify(trace.objectives)===JSON.stringify(objectivesFor(qev.priorityOrder)) &&
         trace.records[0].priorityOrder[0]==='explore' && trace.records[0].requests[0].state===priorityTest.originalState &&
         trace.records.every(record=>record.priorityOrder.length===4 && record.objectives.length===4);

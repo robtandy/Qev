@@ -132,7 +132,10 @@ test("the HTML keeps the card feed and compact controls without the old game pan
   assert.match(priorities, /Goal: SURVIVE · highest first/);
   assert.match(priorities, /id="priorities" role="list"[^>]*aria-describedby="priority-hint"/);
   assert.match(priorities, /Reordering stops play/);
-  assert.match(priorities, /survival-biased action offers stay fixed/);
+  assert.match(priorities, /id="assistance-note"[^>]*role="status"/);
+  assert.match(priorities, /geometry\/GPS, aim and tactical offers/);
+  assert.match(html, /id="assistance" aria-describedby="assistance-note"/);
+  assert.match(html, /<option value="assisted" selected>On<\/option><option value="unassisted">Off · visible telemetry<\/option>/);
   assert.match(priorities, /id="priority-status"[^>]*role="status"/);
   assert.match(priorities, /id="reset-priorities"[^>]*disabled/);
   const masthead = html.match(/<header class="masthead">([\s\S]*?)<\/header>/)[1];

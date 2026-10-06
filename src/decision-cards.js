@@ -21,7 +21,7 @@ export function decisionView(record) {
   const status = decisionStatus(record);
   const choice = record.selectedIndex == null ? null : record.eligible[record.selectedIndex];
   const ticks = record.execution?.ticksApplied;
-  const meta = [`tick ${record.before.tick}${record.appliedAt ? ` → ${record.appliedAt.tick}` : ""}`];
+  const meta = [...(record.assistance ? [`aids ${record.assistance === "assisted" ? "on" : "off"}`] : []), `tick ${record.before.tick}${record.appliedAt ? ` → ${record.appliedAt.tick}` : ""}`];
   if (record.ms !== null) meta.push(`${Math.round(record.ms)} ms`);
   if (Number.isFinite(ticks)) meta.push(`${ticks}/${choice?.params.ticks ?? "?"} ticks`);
   return {
@@ -35,7 +35,8 @@ export function decisionView(record) {
 export function decisionOutcome(record) {
   const before = record.appliedAt || record.before, after = record.after;
   return {
-    status: decisionStatus(record), mode: record.mode,
+    status: decisionStatus(record), mode: record.mode, assistance: record.assistance,
+    observationPolicy: record.observationPolicy, controller: record.controller,
     objective: record.objective, priorityOrder: record.priorityOrder, objectives: record.objectives, offerPolicy: record.offerPolicy,
     observationTick: record.before.tick, appliedTick: record.appliedAt?.tick,
     ageTicksAtApply: record.ageTicksAtApply, ageMsAtApply: record.ageMsAtApply,
@@ -131,7 +132,7 @@ export class DecisionCards {
         const row = this.element("li", chosen ? "chosen" : !candidate.allowed ? "filtered" : "");
         const top = this.element("div", "candidate-top");
         top.append(this.element("span", "", `${chosen ? "→ " : ""}${candidate.label}`), this.element("b", "", score ? `${(score.probability * 100).toFixed(1)}%` : "—"));
-        const text = candidate.reason || candidate.offerNote || (index >= 0 ? `${record.decisionFormat === "choice" ? `Request [0] · choice “${candidate.id}”` : `Request [${index}]`} · up to ${candidate.params.ticks} ticks · bounded aim/movement assistance` : "Not offered: action budget limit");
+        const text = candidate.reason || candidate.offerNote || (index >= 0 ? `${record.decisionFormat === "choice" ? `Request [0] · choice “${candidate.id}”` : `Request [${index}]`} · up to ${candidate.params.ticks} ticks · ${record.assistance === "unassisted" ? "relative inputs; no control aids" : "bounded aim/movement assistance"}` : "Not offered: action budget limit");
         row.append(top, this.element("small", "", text));
         return row;
       });

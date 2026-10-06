@@ -26,6 +26,7 @@
         <label class="difficulty-setting">Difficulty <select id="difficulty" title="Changing difficulty reloads the current map and stops the game" disabled><option value="0">Easy</option><option value="1">Normal</option><option value="2" selected>Hard</option><option value="3">Nightmare</option></select></label>
         <label class="model-setting needs-selection">Model <select id="model" required aria-describedby="model-status"><option value="" disabled selected>Choose a decision model</option><option value="laya">Laya · 479 MB</option><option value="kev-0.8b">Kev · 857 MB</option></select></label>
         <label class="backend-setting">Backend <select id="backend"><option value="auto">Auto / GPU</option><option value="wasm">CPU / WASM</option></select></label>
+        <label class="assistance-setting">Assistance <select id="assistance" aria-describedby="assistance-note" title="Changing assistance stops play. Off keeps coarse visible telemetry, not screen-only perception." disabled><option value="assisted" selected>On</option><option value="unassisted">Off · visible telemetry</option></select></label>
         <button id="cancel-model" aria-label="Cancel model download" hidden>Cancel</button>
       </div>
       <div class="setup-status">
@@ -55,7 +56,7 @@
         <div class="priority-head"><div><h2>Priorities</h2><p class="small muted">Goal: SURVIVE · highest first</p></div><button id="reset-priorities" type="button" aria-label="Reset priorities to their default order" disabled>Reset</button></div>
         <p id="priority-hint" class="priority-hint">Drag or use ↑ ↓. Reordering stops play.</p>
         <ol id="priorities" role="list" aria-label="Decision model priorities, highest first" aria-describedby="priority-hint"></ol>
-        <p class="priority-note">Prompt order only. Safety checks and survival-biased action offers stay fixed.</p>
+        <p id="assistance-note" class="priority-note" role="status">On: geometry/GPS, aim and tactical offers. Priorities change the prompt, not those aids.</p>
         <p id="priority-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
       </aside>
       <aside class="inspector" aria-label="Decision inspector">

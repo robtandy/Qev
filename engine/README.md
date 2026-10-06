@@ -18,9 +18,11 @@ retains upstream source headers and notices, including later Qwasm contributions
 
 The patch changes input ownership, world/entity lifecycle hooks, and the main loop
 in six upstream `WinQuake` files. The added `qev_bridge.c` and `qev_bridge.h` provide
-visibility-limited observations, guarded movement probes, fixed simulation ticks,
+view-cone/LOS-filtered observations, assisted movement/aim and privileged geometry probes,
+an optional coarse-telemetry/raw-input mode with those aids disabled, fixed simulation ticks,
 pause/step and real-time input leases, matching SDL audio pauses, and map/difficulty
-loading. The build script adds the bridge to the makefile and removes asset preloading.
+loading. Off mode redacts coordinates/IDs and disables the probe API; mode changes invalidate
+old observation epochs without restarting the map. Neither mode derives perception from pixels. The build script adds the bridge to the makefile and removes asset preloading.
 
 This repository publishes integration source, not compiled engine releases or game
 assets. The build fetches the specified upstream source into ignored `build/qwasm/`,

@@ -54,14 +54,17 @@ These exports now exist in the Qev build, not in unmodified Qwasm:
 
 | Export | Contract |
 | --- | --- |
-| `qev_snapshot()` | JSON copy of ready/pause/epoch/tick/action state and permitted player/entity observations |
-| `qev_probe(dx, dy, slot, generation, ticks)` | Non-mutating swept-hull/support/hazard probe over the specified 1–45 tick horizon, plus endpoint line of sight to a currently observable target |
+| `qev_snapshot()` | Version-2 JSON copy of ready/pause/epoch/tick/action state, assistance mode, and mode-specific player/entity observations |
+| `qev_assistance(enabled)` | Switch assisted (`1`) / raw-input (`0`) mode, stop input, and advance the observation epoch without restarting the map; persists across level loads |
+| `qev_probe(dx, dy, slot, generation, ticks)` | Assisted mode only: non-mutating swept-hull/support/hazard probe over 1–45 ticks, plus hypothetical endpoint line of sight; returns an error when assistance is off |
 | `qev_pause()` | Clear action/input leases, cancel remaining requested ticks, freeze world time |
 | `qev_play()` | Return to ordinary keyboard/mouse input and resume simulation |
 | `qev_speed(scale)` | Set wall-time pacing in the range 0.05–1; physics tick size is unchanged |
-| `qev_action(epoch, tick, dx, dy, slot, generation, yaw, pitch, attack, ticks)` | Validate and execute a numeric, bounded action from the exact paused observation; 1–12 ticks maximum |
+| `qev_action(epoch, tick, dx, dy, slot, generation, yaw, pitch, attack, ticks)` | Assisted mode only: validate and execute a bounded action from the exact paused observation; 1–12 ticks maximum |
+| `qev_input_action(epoch, tick, forward, side, yawRate, pitchRate, attack, ticks)` | Assistance off only: execute relative inputs from the exact paused observation; 1–12 ticks, no target/probe/ammo/danger veto |
 | `qev_auto()` | Resume simulation with controller-owned input; return a new control-session token |
-| `qev_live_action(epoch, observedTick, session, dx, dy, slot, generation, yaw, pitch, attack, ticks)` | Atomically revalidate and replace an input lease while simulation runs; 1–45 ticks, observation age at most 60 ticks, matching session/epoch |
+| `qev_live_action(epoch, observedTick, session, dx, dy, slot, generation, yaw, pitch, attack, ticks)` | Assisted mode only: revalidate and replace a lease while simulation runs; 1–45 ticks, observation age at most 60 ticks, matching session/epoch |
+| `qev_live_input(epoch, observedTick, session, forward, side, yawRate, pitchRate, attack, ticks)` | Assistance off only: relative input replacement with the same age/session/lease bounds, without tactical validation |
 | `qev_step_frame(epoch, tick)` | Advance one fixed tick with no agent input |
 | `qev_new_game(name, difficulty)` | Validate a map name and integer difficulty 0–3; queue skill before spawning the new world, then pause when ready |
 | `qev_load_map(name)` | Compatibility entry point preserving the currently active difficulty |
@@ -73,33 +76,41 @@ startup so an older WASM build fails with rebuild guidance, not a mismatched cal
 report `difficulty` from Quake's `current_skill` (the loaded level's setting), not a pending
 UI selection or a cvar that has not yet been applied.
 
-Inputs are normalized world-space directions. The bridge projects them into the current
-view's forward/side axes each tick, so target tracking does not silently rotate a requested
-strafe into a different world direction. It writes Quake's actual view-angle, movement,
-and attack state; it does not fake DOM keyboard events for the agent.
+Assisted inputs are normalized world-space directions. The bridge projects them into the
+current view's forward/side axes each tick, so tracking does not silently rotate a requested
+strafe into a different world direction. Assistance-off inputs instead use forward/side
+controls relative to the current view, yaw/pitch rates, and an attack button. Neither path
+fakes DOM events: both use Quake's ordinary user-command/physics path.
 
 ## Observation policy and guards
 
-Only local single-player sessions are supported. Exported entity records are restricted
-to recognizable stock monsters/pickups with models, a view-cone check, and line of sight.
-At most three of each, nearest first, are returned. Enemy health, QuakeC enemy/goal fields,
-and hidden actors are never serialized. Entity slots have generation counters on free,
-and map changes reset observation epochs.
+Only local single-player sessions are supported. Both modes restrict object descriptions
+to recognizable stock monsters/pickups with models, a 90° horizontal / 60° vertical view-cone
+check, a 1,024-unit range cap, and a collision-ray line-of-sight test. At most three of each,
+nearest first, are returned. Enemy health and QuakeC enemy/goal fields are not serialized.
+**This is engine-labelled telemetry, not visual perception:** lighting/rendered-pixel
+visibility is not checked, and corpse filtering reads engine death/solid state. The formatter
+also excludes actors marked unobserved as a defensive check. No audio reaches the models.
 
-Own health/ammo/armor and silver/gold key inventory are permitted HUD facts. Visible key
-pickups and megahealth are distinguished from ordinary health. Own position and local
-geometry queries are explicitly disclosed telemetry assistance. Corpse filtering uses engine death/solid
-state; this is not claimed to be perception from rendered pixels. The formatter also
-excludes actors marked unobserved as a defensive check.
+Health/ammo/armor and silver/gold key inventory are HUD facts. In assisted mode, snapshots
+also expose precise positions, bearings, and actor IDs/generations. The controller uses GPS
+memory and privileged geometry queries in all walking directions, including off screen, plus
+hypothetical destination-cover tests and door/key metadata. Actor filtering does not make
+those geometry queries human-equivalent or restrict them to visibly known terrain.
 
-For inspection actions the bridge requires an exact epoch/tick and a paused world. For
-real-time actions it requires an active controller session, a matching epoch, and an
-observation no more than 60 ticks old (never a future tick). Both paths enforce finite
-numeric bounds, action duration, current target identity/generation/visibility, ammo, and
-a new route probe from the current player position. During execution it checks visibility,
-ammo, and local movement each tick. Aim is bounded to 180°/s; attack is only pressed when
-aim is close and the shot is clear. It never tracks through walls or silently substitutes
-a different target/candidate.
+In assistance-off mode the native snapshot removes coordinates, yaw/pitch, ground/water
+flags, precise ranges/bearings, and stable actor IDs. Contacts have only a kind, coarse
+left/ahead/right, above/level/below, nearby/medium/far, and the visibility flag. There is no
+fallback to precise data when a coarse field is missing. Native probe calls fail in this mode.
+
+Both modes require exact epoch/tick for inspection, or an active matching session/epoch and
+an observation at most 60 ticks old for live input. Finite numeric bounds and action durations
+are always enforced. **Only assisted input** additionally validates target identity, visibility,
+ammo and local routes, repeats movement/target checks each tick, tracks at up to 180°/s, and
+fires only when aligned with a clear shot. Relative inputs have none of those tactical guards:
+fire can miss or run without a visible target/ammo, movement can hit walls or enter hazards,
+and ordinary game physics/damage decides the result. Stock Quake weapon behavior remains;
+no god mode, noclip, or extra ammunition is introduced. Neither path substitutes another model choice.
 
 The pause flag describes debug mode; while `remaining > 0`, an explicitly requested step
 is in progress. Real-time mode instead has `paused=false`, `owned=true`, and `remaining=0`.
@@ -112,6 +123,39 @@ the jump or overrides a manual Pause. Snapshots include `controlSession`, `actio
 `actionTicksLeft`, and `stopReason`; `actionTicks` counts actual input applications.
 Stationary actions may execute while airborne, but their prompts explicitly acknowledge
 that gravity/momentum still apply; they do not claim floor support or zero displacement.
+
+## Toggleable assistance-off experiment
+
+The **Assistance** selector defaults to **On**, preserving the established demo. **Off · visible
+telemetry** is an explicit experiment, not a claim of screen-only or human-equivalent play.
+`src/assistance.js` centralizes both policies. `src/unassisted.js` always offers the same 14
+relative primitives: forward/back/left/right; turn left/right; look up/down; fire; each of
+the four movements with fire; and release all inputs. There is no movement/cover look-ahead
+query, resource/loop filter, nearest-target macro, tactical shortlist, or post-application probe.
+The visibility ray used to filter object descriptions remains part of the sensing concession.
+Health/ammo, enemies and pickups do not change which inputs are offered or their order.
+
+Movement is 200 units/s, turn primitives 60°/s, look primitives 45°/s. The native boundary
+caps turn/look rates at 180°/s and uses the same 12-tick inspection / 45-tick live lease limits.
+The model must choose its own turns and shots; no entity reference reaches raw input.
+Unassisted memory records only the last applied input and observed HUD health/ammo changes,
+not displacement, cell visits, contact identity or waypoints. Both entering and leaving this
+mode discard old navigation/memory. Priorities still change the actual prompt in both modes.
+
+Changing the selector stops Auto/Step, cancels pending respawn continuation, and invalidates
+old model responses. The native setter clears leases and advances the observation epoch,
+even across an on/off/on sequence, while preserving position, game time, health, map and
+skill. The wrong mode's native action entry points reject calls. The setting persists across
+map/difficulty changes, deaths and model/backend reloads, but a page reload defaults to On.
+Weights are not reloaded just to switch assistance. Every record/card/export identifies its
+mode and retains the exact original request; switching cannot rewrite old decisions.
+
+Off removes aids but also lacks a human's scene understanding: walls/floor are not described,
+there are no screenshots/audio, and engine object classification remains a concession.
+There are no jump/swim/weapon-selection primitives in this first experiment. Stop, focus-loss
+handling, death recovery and bounded leases remain. Step and slow playback still pause/slow
+the world; use **Start at 1×** for real-time experiments. This is a package ablation with a
+different observation/action interface, not an isolated measurement of any one assistance.
 
 ## Level selection, layout, and death recovery
 
@@ -138,7 +182,7 @@ Stop freezes the simulation without resetting the map. `src/stepper.js` owns
 a single-click frozen-score/bounded-action job. It can reuse only a still-fresh inspection
 score; otherwise it gets a new observation and choice, executes at most 12 ticks, and stops.
 Its cancel operation invalidates the agent generation and releases inputs, so Stop during
-inference or execution cannot be undone by a late reply. Map/model changes and tab/focus loss
+inference or execution cannot be undone by a late reply. Map/model/assistance changes and tab/focus loss
 use the same cancellation path. Busy checks prevent concurrent step or start jobs. The old
 frozen Score and single-frame engine methods remain diagnostic APIs, not UI buttons. The game gets the larger left column and all the available
 viewport height after the compact controls and credits footer. A ResizeObserver recomputes
@@ -220,9 +264,10 @@ for this page session; reloading the page returns to defaults.
 Both prompt formats now say to follow the listed order, highest first. Wording that always
 put exploration last (including "only after survival needs" and a permanently secondary
 exploration question) has been removed, so moving it up actually changes the prompt's
-ranking. SURVIVE remains the overall goal, not a reorderable fifth entry. **This changes
-prompt priorities, not the survival-biased action shortlist or native safety checks.** The
-panel explicitly discloses that distinction; model compliance or better play is not guaranteed.
+ranking. SURVIVE remains the overall goal, not a reorderable fifth entry. **Priority order
+changes the prompt, not the selected assistance policy.** On retains its survival-biased
+action shortlist and tactical guards; Off keeps all fixed raw primitives. The panel explicitly
+discloses the current policy; model compliance or better play is not guaranteed.
 
 An `Agent` owns an immutable `priorityOrder` snapshot. `setPriorities()` validates before
 changing anything and invalidates the controller even for a previously scored frozen state.
@@ -405,7 +450,8 @@ selected candidate after fresh checks. Scoring itself still never executes an an
 The selected live horizon (up to 750 ms, shorter near obstacles), currently held action,
 and exploration/loop context are disclosed in each request. Live records cannot be executed through debug Step after pausing.
 
-A record contains the primary objective, captured priority IDs/order, ordered supporting objectives, shortlist policy,
+A record contains its assistance mode, observation/controller policy, primary objective,
+captured priority IDs/order, ordered supporting objectives, shortlist policy,
 before observation, mode, decision format, shared state, steering
 reference/source decision, exploration summary, all candidates (including geometry, ammo, resource-objective, and loop rejection
 reasons), eligible-ID-to-choice mapping, exact requests, untouched responses,
@@ -420,9 +466,11 @@ fail closed while preserving the response. Real-time Pause, reset, model change,
 completion, and human takeover discard late results; native session tokens also prevent
 old commands from crossing a pause/resume boundary in the same map.
 
-History is bounded to 50 records and can be exported as version-5 JSON. The top level contains
-the active `priorityOrder` and corresponding `objectives`; each record separately retains its
-own captured order, objective text, exact request, and decision format. Browsing an old record does not make it executable. Default
+History is bounded to 50 records and can be exported as version-6 JSON. The top level contains
+the current assistance policy, `priorityOrder` and `objectives`; each record separately retains
+its own mode, order, objective text, exact request, and decision format. Current exploration
+is null when Off, as are raw records' navigation/geometry fields. Historical assisted records
+remain labelled and inspectable; their privileged telemetry never feeds new raw decisions. Browsing an old record does not make it executable. Default
 selection uses `answers.action.choice`; displayed probabilities come from
 `answers.action.probabilities` by stable action ID. Only the explicit noul baseline ranks
 independent `answers.favorable.noul` values with input-order tie-breaking. Raw fields remain
@@ -479,7 +527,7 @@ failures, same-model retries, ignored late progress, and model changes during pe
 inference. With `--model`, dropdown selection loads real Laya and leaves the world stopped.
 `scripts/browser-priorities.mjs` checks button/keyboard reordering and native pointer drag/drop,
 focus/boundary controls, current versus historical request text, stale-reply rejection in
-inspection/Auto, interrupted Step execution, map-change persistence, and version-5 exports.
+inspection/Auto, interrupted Step execution, map-change persistence, and version-6 exports.
 Additional checks cover configuration before engine startup, page-reset defaults, and
 priority retention across model/backend changes.
 Desktop/tablet/phone checks verify the new columns and usable touch controls. A real Laya
@@ -501,6 +549,25 @@ The optional LibreQuake encounter overlay keeps existing geometry and changes en
 placement to put a single grunt and health pickup near the player. Its source resource
 hash is checked before generation; the original archives are unchanged. This is a small
 functional encounter, not a controlled published gameplay benchmark.
+
+`scripts/browser-assistance.mjs` verifies native snapshot redaction, disabled probe/assisted
+APIs while Off, raw numeric/lease bounds, actual angular rates without target lock, real
+ammunition spent without a visible target, and acceptance of a route vetoed by assisted
+geometry. A throwing probe stub covers raw scoring, application and outcome collection.
+It also checks Step/Auto cancellation on mode switches, historical-mode labelling, version-6
+exports, and assistance persistence across map loading and death; model-loader checks cover
+backend/model changes. Node tests poison privileged fields/probes/navigation to prove the
+raw formatter avoids them, and verify the invariant 14-input set regardless of tactical state.
+
+With `--assistance`, the muted browser harness loads real Laya and runs one fresh 12-second
+map-6/Hard episode per mode at 1×, without auto-respawn. Full inputs/responses/outcomes go to
+ignored `build/assistance-trials.json`; screenshots are saved per mode. The first illustrative
+run ended alive at 100 health in both modes, with neither complete. On applied 42 decisions
+mixing movement/fire/pickups and ended with 12 shells; Off applied 82 decisions, all stationary
+fire, and ended with 1 shell (both started with 25). Maximum reported input tokens were
+454/393, with no truncation warnings. These are **single, non-matched-RNG trials with different
+interfaces**, not evidence of a reliable performance advantage or human-equivalent play.
+Reproduce with `node scripts/browser-smoke.mjs --assistance` after building/installing the demo.
 
 With `--explore`, the browser check additionally runs 30 seconds of real Laya control on
 `lq_e0m1` and `lq_e0m2`, exporting observations, exploration summaries, requests/responses,

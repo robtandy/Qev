@@ -1,4 +1,6 @@
 import { PRIMARY_OBJECTIVE, DEFAULT_PRIORITY_ORDER, validatePriorityOrder, objectivesFor, goalPrompt, OFFER_POLICY } from "./objective.js";
+import { ASSISTANCE, assistanceOf } from "./assistance.js";
+import { prepareUnassisted, unassistedState } from "./unassisted.js";
 
 export const ACTION_TICKS = 12;
 export const LIVE_TICKS = 45;
@@ -58,6 +60,7 @@ function steeringFrame(observation, { realtime = false, heldCandidate = null } =
 }
 
 export function situation(observation, memory = null, exploration = null, priorityOrder = DEFAULT_PRIORITY_ORDER) {
+  if (assistanceOf(observation) === "unassisted") return unassistedState(observation, memory, { priorityOrder });
   if (observation.completed) return "Level complete: the engine confirmed the exit. No further action is required.";
   const { player: p } = observation;
   const enemies = observation.enemies.filter((e) => e.visible === true);
@@ -81,6 +84,7 @@ export function situation(observation, memory = null, exploration = null, priori
 
 /** Only observed telemetry and measured local history reach prose; never a hidden exit/map graph. */
 export function candidates(observation, probe, memory = null, { realtime = false, heldAction = null, heldCandidate = null, navigation = null, priorityOrder = DEFAULT_PRIORITY_ORDER } = {}) {
+  if (assistanceOf(observation) === "unassisted") return prepareUnassisted(observation, memory, { realtime, heldAction, priorityOrder }).candidates;
   if (!observation.ready || !observation.alive || observation.completed) return [];
   const { player: p } = observation;
   const maxTicks = realtime ? LIVE_TICKS : ACTION_TICKS;
@@ -197,6 +201,10 @@ export function prepareDecision(observation, probe, memory, options = {}) {
   const decisionFormat = validateDecisionFormat(options.decisionFormat ?? DEFAULT_DECISION_FORMAT);
   const priorityOrder = validatePriorityOrder(options.priorityOrder === undefined ? DEFAULT_PRIORITY_ORDER : options.priorityOrder);
   const decisionOptions = { ...options, priorityOrder };
+  if (assistanceOf(observation) === "unassisted") {
+    const prepared = prepareUnassisted(observation, memory, decisionOptions);
+    return { ...prepared, decisionFormat, requests: requestsFor(prepared.eligible, prepared.sharedState, decisionFormat) };
+  }
   const all = candidates(observation, probe, memory, decisionOptions);
   const valid = all.filter((c) => c.allowed);
   const combat = valid.filter((c) => c.category === "combat");
@@ -230,7 +238,8 @@ export function prepareDecision(observation, probe, memory, options = {}) {
   const navigation = options.navigation?.summary(observation) || null;
   const steering = eligible.length ? steeringFrame(observation, options) : null;
   const sharedState = eligible.length ? choiceState(observation, eligible, memory, navigation, decisionOptions) : "";
-  return { objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), offerPolicy: OFFER_POLICY,
+  return { assistance: "assisted", observationPolicy: ASSISTANCE.assisted.observationPolicy, controller: ASSISTANCE.assisted.controller,
+    objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), offerPolicy: OFFER_POLICY,
     candidates: all, eligible, navigation, steering, decisionFormat, sharedState, requests: requestsFor(eligible, sharedState, decisionFormat) };
 }
 

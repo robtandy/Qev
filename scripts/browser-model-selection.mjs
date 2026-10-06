@@ -114,6 +114,7 @@ export async function checkModelSelection({ evaluate, check, until }) {
         document.querySelector('#auto').getAttribute('aria-pressed')==='false' && modelSelectionTest.decisions.length===0 &&
         qev.engine.snapshot().paused && qev.engine.snapshot().tick===modelSelectionTest.before.tick && qev.playMode==='inspection';
     `);
+    await change('assistance', 'unassisted');
     await change('backend', 'auto'); await loadCount(4);
     await check("changing the backend reloads the selected model and disposes the old instance", `
       return modelSelectionTest.loads[3].options.model==='laya' && modelSelectionTest.loads[3].options.backend==='auto' &&
@@ -146,8 +147,9 @@ export async function checkModelSelection({ evaluate, check, until }) {
     `);
     await change('backend', 'wasm'); await loadCount(6);
     await evaluate("document.querySelector('#cancel-model').click();modelSelectionTest.loads[5].reject(new DOMException('Aborted','AbortError'))"); await idle();
-    await check("model switches and backend reloads keep the user's configured priorities", `
-      return JSON.stringify(qev.priorityOrder)===JSON.stringify(modelSelectionTest.priorityOrder) &&
+    await check("model switches and backend reloads keep assistance off and the user's configured priorities", `
+      return qev.engine.snapshot().assistance==='unassisted' && modelSelectionTest.oldDecision.assistance==='unassisted' &&
+        JSON.stringify(qev.priorityOrder)===JSON.stringify(modelSelectionTest.priorityOrder) &&
         JSON.stringify(modelSelectionTest.oldDecision.priorityOrder)===JSON.stringify(modelSelectionTest.priorityOrder);
     `);
     await check("normal cancellation rejection also leaves a retryable choice rather than an error", `
@@ -160,7 +162,7 @@ export async function checkModelSelection({ evaluate, check, until }) {
   }
   // Restore a pristine stopped map/empty history for the remaining browser tests.
   // Only this test fixture clears history; production model changes preserve it.
-  await change('model', ''); await change('backend', 'auto');
+  await change('model', ''); await change('backend', 'auto'); await change('assistance', 'assisted');
   await evaluate("document.querySelector('#reset-priorities').click();qev.agent.history.length=0;qev.agent.invalidate();qev.engine.loadMap('lq_e0m6',2)");
   await evaluate("qev.pause();document.activeElement.blur();delete window.modelSelectionTest");
 }

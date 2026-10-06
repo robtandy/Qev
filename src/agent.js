@@ -1,6 +1,7 @@
 import { distance, prepareDecision, rankResponses, DEFAULT_DECISION_FORMAT, validateDecisionFormat, MAX_DECISION_AGE_TICKS, MAX_DECISION_AGE_MS } from "./decisions.js";
 import { ExplorationMemory } from "./navigation.js";
 import { DEFAULT_PRIORITY_ORDER, validatePriorityOrder } from "./objective.js";
+import { DEFAULT_ASSISTANCE, assistanceOf } from "./assistance.js";
 
 /** DOM-free lifecycle: frozen score/step inspection, or single-flight real-time decisions. */
 export class Agent {
@@ -20,6 +21,7 @@ export class Agent {
     this.executing = false;
     this.memory = null;
     this.navigation = new ExplorationMemory();
+    this.observedAssistance = DEFAULT_ASSISTANCE;
     this.liveSession = null;
     this.liveMap = null;
     this.active = null;
@@ -66,8 +68,16 @@ export class Agent {
     this.liveMap = this.engine.snapshot().map || "";
     this.onChange();
   }
+  observeObservation(now) {
+    const assistance = assistanceOf(now);
+    if (assistance !== this.observedAssistance) {
+      this.navigation.reset(); this.memory = null;
+      this.observedAssistance = assistance;
+    }
+    if (assistance === "assisted") this.navigation.observe(now);
+  }
   liveValid(now, record) {
-    return now.ready && now.alive && !now.completed && !now.paused && now.owned &&
+    return assistanceOf(now) === record.assistance && now.ready && now.alive && !now.completed && !now.paused && now.owned &&
       now.epoch === record.before.epoch && now.controlSession === this.liveSession &&
       now.controlSession === record.before.controlSession && now.tick >= record.before.tick &&
       now.tick - record.before.tick <= MAX_DECISION_AGE_TICKS && performance.now() - record.startedMono <= MAX_DECISION_AGE_MS;
@@ -83,7 +93,7 @@ export class Agent {
     const before = this.engine.snapshot();
     if (!before.ready || !before.alive || before.completed) throw new Error("Start a live single-player game first.");
     if (realtime && (this.liveSession === null || before.paused || !before.owned || before.controlSession !== this.liveSession)) throw new Error("Start real-time Auto before scoring a moving world.");
-    this.navigation.observe(before);
+    this.observeObservation(before);
     const holding = this.active && before.actionTicksLeft > 0 && before.actionSerial === this.active.actionSerial && before.epoch === this.active.appliedAt.epoch;
     const heldCandidate = holding ? { ...this.active.eligible[this.active.selectedIndex], decisionId: this.active.id } : null;
     const heldAction = heldCandidate?.label || null;
@@ -107,7 +117,7 @@ export class Agent {
       record.responses = responses; // Untouched response, including raw probabilities and timing.
       const now = this.engine.snapshot();
       record.checkedAt = structuredClone(now);
-      const valid = realtime ? this.liveValid(now, record) : now.ready && now.epoch === before.epoch && now.tick === before.tick && now.paused && now.alive && !now.completed;
+      const valid = realtime ? this.liveValid(now, record) : now.ready && now.epoch === before.epoch && now.tick === before.tick && now.paused && now.alive && !now.completed && assistanceOf(now) === record.assistance;
       if (job.generation !== this.generation || model !== this.getModel() || !valid) {
         record.status = "discarded";
         record.error = "The controller, world, or decision age changed; this response cannot be applied.";
@@ -143,9 +153,9 @@ export class Agent {
     }
     record.checkedAt = structuredClone(now);
     const choice = record.eligible[record.selectedIndex];
-    this.navigation.observe(now);
-    // Native code atomically revalidates visibility, entity generation, ammo, and the current route.
-    // Rejection never picks a different model candidate or freezes the world.
+    this.observeObservation(now);
+    // Assisted inputs revalidate targets/routes; relative inputs only validate structural bounds
+    // and session/world freshness. Neither path silently substitutes a different choice.
     if (!this.engine.applyLive(choice.params, this.liveSession)) {
       record.status = "rejected";
       record.error = "The target, ammunition, or route changed before this action could be applied.";
@@ -154,9 +164,13 @@ export class Agent {
     }
     this.finishLive(now, "Replaced by a newer model decision.");
     record.appliedAt = structuredClone(now);
-    record.appliedGeometry = this.engine.probe(choice.params);
-    this.navigation.chosen(choice, record.appliedGeometry);
-    record.appliedNavigation = this.navigation.summary(now);
+    if (record.assistance === "assisted") {
+      record.appliedGeometry = this.engine.probe(choice.params);
+      this.navigation.chosen(choice, record.appliedGeometry);
+      record.appliedNavigation = this.navigation.summary(now);
+    } else {
+      record.appliedGeometry = null; record.appliedNavigation = null;
+    }
     record.actionSerial = this.engine.snapshot().actionSerial;
     record.ageTicksAtApply = now.tick - record.before.tick;
     record.ageMsAtApply = performance.now() - record.startedMono;
@@ -166,7 +180,7 @@ export class Agent {
     return true;
   }
   observeLive(now) {
-    this.navigation.observe(now);
+    this.observeObservation(now);
     let changed = false, resumed = false;
     if (this.active && (now.epoch !== this.active.appliedAt.epoch || now.actionSerial !== this.active.actionSerial || !now.actionTicksLeft || now.paused || !now.alive || now.completed)) {
       this.finishLive(now, "Action ended or the world changed.");
@@ -202,6 +216,12 @@ export class Agent {
   remember(record, before, after) {
     if (after.epoch !== before.epoch || !after.player) return;
     const choice = record.eligible[record.selectedIndex];
+    if (record.assistance === "unassisted") {
+      record.navigationAfter = null;
+      this.memory = { epoch: after.epoch, label: choice.label, realtime: record.mode === "realtime",
+        damage: Math.max(0, before.player.health - after.player.health), ammoChange: after.player.ammo - before.player.ammo };
+      return; // Never infer displacement, visits or actor identities from the redacted mode.
+    }
     if (record.mode !== "realtime") this.navigation.chosen(choice);
     this.navigation.outcome(choice, before, after, record.appliedNavigation || record.navigation,
       record.execution?.ticksApplied ?? after.actionTicks ?? (after.tick - before.tick));
@@ -221,7 +241,7 @@ export class Agent {
     const record = this.current;
     if (!record || record.status !== "scored" || record.mode !== "inspection") throw new Error("Score the current paused observation first.");
     const now = this.engine.snapshot();
-    if (!now.paused || !now.alive || now.completed || now.epoch !== record.before.epoch || now.tick !== record.before.tick || record.generation !== this.generation || this.scoredModel !== this.getModel()) {
+    if (!now.paused || !now.alive || now.completed || now.epoch !== record.before.epoch || now.tick !== record.before.tick || record.generation !== this.generation || this.scoredModel !== this.getModel() || assistanceOf(now) !== record.assistance) {
       record.status = "discarded";
       this.onChange();
       throw new Error("The world changed. Score a fresh observation.");

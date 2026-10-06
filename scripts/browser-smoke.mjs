@@ -1,5 +1,5 @@
 // Real Chromium + real Qwasm, using only the installed LibreQuake demo.
-// --model downloads/runs Laya; --explore runs full levels; --compare evaluates choice vs noul.
+// --model runs Laya; --explore runs levels; --compare evaluates choice/noul; --assistance adds a short aids-on/off trial.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -10,6 +10,7 @@ import { compareDecisions } from "./compare-decisions.mjs";
 import { beginAudioChecks, checkAudioPlayback } from "./browser-audio.mjs";
 import { checkModelSelection } from "./browser-model-selection.mjs";
 import { checkPriorities } from "./browser-priorities.mjs";
+import { checkAssistance, runAssistanceTrials } from "./browser-assistance.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, timeout = 30_000) {
@@ -21,10 +22,11 @@ async function until(fn, timeout = 30_000) {
   throw error || new Error("Timed out waiting for browser state.");
 }
 const chromePath = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-if (process.argv.slice(2).some((arg) => !["--model", "--explore", "--compare"].includes(arg))) throw new Error("Usage: node scripts/browser-smoke.mjs [--model] [--explore] [--compare]. Install the demo with npm run setup:demo first.");
+if (process.argv.slice(2).some((arg) => !["--model", "--explore", "--compare", "--assistance"].includes(arg))) throw new Error("Usage: node scripts/browser-smoke.mjs [--model] [--explore] [--compare] [--assistance]. Model/trial flags load Laya. Install the demo with npm run setup:demo first.");
 const explore = process.argv.includes("--explore");
 const compare = process.argv.includes("--compare");
-const runModel = explore || compare || process.argv.includes("--model");
+const assistanceTrials = process.argv.includes("--assistance");
+const runModel = explore || compare || assistanceTrials || process.argv.includes("--model");
 await mkdir(resolve(root, "build/browser-profile"), { recursive: true });
 const server = makeServer();
 await new Promise((r) => server.listen(8091, "127.0.0.1", r));
@@ -282,6 +284,7 @@ try {
     return qev.engine.snapshot().player.grounded && qev.engine.snapshot().paused;
   `);
   await checkAudioPlayback({ evaluate, check, call, until });
+  await checkAssistance({ evaluate, check, until, bindKillForTest, killPlayerViaConsole });
   await evaluate(`
     window.originalModel = qev.agent.getModel;
     window.mockCalls = [];
@@ -745,6 +748,16 @@ try {
     await writeFile(resolve(root, 'build/exploration-summary.json'), JSON.stringify(reports.map(r=>({map:r.map,alive:r.observation.alive,completed:r.observation.completed,cells:r.exploration.rememberedCells,moved:r.exploration.distanceMoved,applied:r.records.filter(x=>x.appliedAt).length})),null,2));
   }
   if (compare) await compareDecisions({ evaluate, root });
+  if (assistanceTrials) {
+    const report = await runAssistanceTrials({ evaluate, check, until, onStopped: async mode => {
+      await evaluate("window.scrollTo({top:0,behavior:'instant'})");
+      const image = await call('Page.captureScreenshot', {format:'png'});
+      await writeFile(resolve(root, `build/qev-${mode}-trial.png`), Buffer.from(image.data,'base64'));
+    } });
+    await writeFile(resolve(root, 'build/assistance-trials.json'), JSON.stringify(report,null,2));
+    console.log('Illustrative assistance trials:', report.runs.map(({records,start,end,choices,...summary})=>summary));
+    console.log('Trial caveat:', report.caveat);
+  }
   await evaluate("window.scrollTo({top:document.querySelector('.workbench').offsetTop-10,behavior:'instant'})");
   await sleep(100);
   const shot = await call("Page.captureScreenshot", { format: "png" });
