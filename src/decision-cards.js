@@ -143,7 +143,7 @@ export class DecisionCards {
     const records = latestDecisions(history), ids = new Set(records.map((record) => record.id));
     for (const [id, card] of this.cards) if (!ids.has(id)) { card.root.remove(); this.cards.delete(id); }
     if (!records.length) {
-      if (!this.container.querySelector(".empty")) this.container.replaceChildren(this.element("li", "empty", "Load a model, then choose Start or Step. Decisions will appear here."));
+      if (!this.container.querySelector(".empty")) this.container.replaceChildren(this.element("li", "empty", "Choose a model above to load it, then Start or Step. Decisions will appear here."));
       return;
     }
     this.container.querySelector(".empty")?.remove();

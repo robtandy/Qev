@@ -123,13 +123,18 @@ are disabled during loading to prevent overlapping map commands. Model downloads
 
 The playback buttons are **Start**, **Stop**, and **Step** only. Start is one-way and disabled
 while running or loading a model. The model selector initially says **Choose a decision
-model**, with neither Kev nor Laya selected. Load remains disabled until a valid choice;
-its handler also rejects an empty/unknown selection instead of falling back to the SDK's
-default. Start first prompts to choose a model, focusing the dropdown without downloading.
-Once chosen, Start opens an accessible Load model dialog identifying the selection and
-size. It starts no download or gameplay on its own. Cancel/Escape leave the world stopped; Load model explicitly
-invokes the existing loader, then the user presses Start again. Stop freezes the simulation
-without resetting the map. `src/stepper.js` owns
+model**, with neither Kev nor Laya selected. A steady accent highlight marks the required
+choice from first paint, with an associated hint explaining that selection downloads the
+model if needed. Changing the dropdown loads that model immediately; there is no Load button
+or confirmation dialog. Empty/unknown choices never fall back to the SDK default. Start
+without a model focuses the dropdown without choosing or downloading anything. Changing the
+backend reloads an already selected model, but a backend preference alone downloads nothing.
+Loading stops playback, invalidates outstanding decisions, and disposes the previous model.
+The model/backend selectors stay disabled during the single-flight load; Cancel aborts it.
+Cancelled or failed loads reset and re-highlight the placeholder so the same model can be
+selected again. Late progress is ignored and a model that finishes after cancellation is
+disposed, never installed. Successful loading leaves play stopped until Start or Step.
+Stop freezes the simulation without resetting the map. `src/stepper.js` owns
 a single-click frozen-score/bounded-action job. It can reuse only a still-fresh inspection
 score; otherwise it gets a new observation and choice, executes at most 12 ticks, and stops.
 Its cancel operation invalidates the agent generation and releases inputs, so Stop during
@@ -439,9 +444,12 @@ binary verdicts, no verdict during inference, untouched payloads, HTML-injection
 per-card Copy, and preservation of expansion, focus, and scrolling when new cards arrive.
 Playback checks verify exactly three buttons, one-click Step with real Laya, Stop during
 both scoring and execution, and immediate stopped map/difficulty changes—including during
-real-time inference and a pending Step. The model prompt is checked for selected model/size,
-Cancel and Escape dismissal, absence of unsolicited network requests, explicit confirmation
-loading real Laya, and keeping the world stopped after loading. Test-only console key binding sets health to zero: LibreQuake's
+real-time inference and a pending Step. Model-selection checks verify the initial unfocused
+highlight, direct loading on choice, backend reloads, absence of a Load button/dialog and
+unsolicited network requests, and Start focusing the empty selector without downloading.
+A delayed fake loader exercises single-flight loading, cancellation (including a late success),
+failures, same-model retries, ignored late progress, and model changes during pending real-time
+inference. With `--model`, dropdown selection loads real Laya and leaves the world stopped. Test-only console key binding sets health to zero: LibreQuake's
 `kill` command itself restarts immediately inside QuakeC and would bypass the observed-death
 path being tested. No diagnostic kill export is added to the production bridge.
 

@@ -10,6 +10,7 @@ import { loadDemo } from "./demo.js";
 const $ = (id) => document.getElementById(id);
 const pageTitle = document.title;
 const modelSelected = () => ["laya", "kev-0.8b"].includes($("model").value);
+const modelHint = "Choose a model · selecting downloads it if needed.";
 let engine = null, agent = null, model = null, snapshot = null, respawner = null, stepper = null;
 let operation = "", loadingModel = null, autoToken = 0, auto = false, playMode = "inspection";
 const engineLines = [];
@@ -49,18 +50,19 @@ function fitGame() {
 }
 function updateControls() {
   const live = !!snapshot?.ready, alive = live && snapshot.alive && !snapshot.completed;
-  const busy = !!agent?.busy || !!stepper?.busy || !!operation || !!snapshot?.remaining;
+  const busy = !!agent?.busy || !!stepper?.busy || !!operation || !!loadingModel || !!snapshot?.remaining;
   const paused = live && snapshot.paused && !snapshot.remaining;
   const hasModel = !!(agent?.getModel() || model);
   $("pause").disabled = !engine;
   $("step").disabled = !alive || !paused || busy || !hasModel || auto;
-  $("auto").disabled = !alive || busy || auto || !!loadingModel;
+  $("auto").disabled = !alive || busy || auto;
   $("auto").setAttribute("aria-pressed", String(auto));
   $("map").disabled = $("difficulty").disabled = !engine || !!operation;
   $("export").disabled = !agent?.history.length;
-  $("load-model").disabled = !modelSelected() || !!loadingModel || !!operation;
+  $("model").closest(".model-setting").classList.toggle("needs-selection", !modelSelected());
   $("model").disabled = $("backend").disabled = !!loadingModel || !!operation;
   $("cancel-model").hidden = !loadingModel;
+  $("cancel-model").disabled = !!loadingModel?.abort.signal.aborted;
   if (operation) $("status").textContent = operation;
   else if (!live) $("status").textContent = engine ? "Waiting for the level…" : "Loading the demo automatically…";
   else if (snapshot.completed) $("status").textContent = "Level complete. Choose another map to load it stopped.";
@@ -70,9 +72,10 @@ function updateControls() {
     const last = agent.history.findLast((r) => r.mode === "realtime" && r.ms !== null);
     $("status").textContent = `Running · ${PRIMARY_OBJECTIVE}${last ? ` · ${Math.round(last.ms)} ms / decision` : ""}. Stop to inspect.`;
   }
+  else if (loadingModel) $("status").textContent = "Stopped · loading the selected model…";
   else if (agent?.inflight) $("status").textContent = stepper?.busy ? "Choosing one action · world stopped. Stop cancels the step." : "Stopped · waiting for the previous model response to finish.";
   else if (!snapshot.paused) $("status").textContent = "Simulation running · P stops.";
-  else $("status").textContent = hasModel ? "Stopped · Start runs continuously. Step runs one decision." : modelSelected() ? "Stopped · press Start to load the selected model." : "Stopped · choose Kev or Laya first.";
+  else $("status").textContent = hasModel ? "Stopped · Start runs continuously. Step runs one decision." : "Stopped · choose Kev or Laya to load it.";
 }
 function poll() {
   if (!engine) return;
@@ -118,13 +121,8 @@ function playFromGesture(fn) {
 async function score() { await agent.score(); }
 async function step() { return stepper.step(); }
 function promptForModel() {
-  const selected = modelSelected();
-  $("model-required-title").textContent = selected ? "Load a model first" : "Choose a decision model";
-  $("model-required-message").textContent = selected
-    ? `${$("model").selectedOptions[0].textContent}. Load this model to enable play. If it is not cached, it will download first; inference runs on this device. The game stays stopped—press Start again when loading finishes.`
-    : "Choose Kev or Laya in the Model dropdown first, then load it to enable play. Nothing has been downloaded.";
-  $("confirm-model-prompt").textContent = selected ? "Load model" : "Choose model";
-  if (!$("model-required").open) $("model-required").showModal();
+  $("model-status").textContent = "Choose Kev or Laya above. Selection loads it; then press Start.";
+  $("model").focus();
 }
 async function runAuto() {
   if (auto) return;
@@ -213,48 +211,77 @@ async function startDemo() {
     throw error;
   } finally { $("asset-progress").hidden = true; operation = ""; }
 }
-$("load-model").addEventListener("click", () => guard(async () => {
-  if (!modelSelected()) { promptForModel(); return; }
-  const name = $("model").value;
+async function loadSelectedModel() {
+  // The selectors are disabled during loading. Also reject forced/queued changes:
+  // never overlap SDK loads or show a selection different from the active job.
+  if (loadingModel) {
+    $("model").value = loadingModel.name;
+    $("backend").value = loadingModel.backend;
+    return;
+  }
   stop(); agent?.invalidate();
-  model?.dispose(); model = null;
-  const abort = new AbortController(); loadingModel = abort;
+  const previous = model; model = null;
+  $("model-status").title = "";
+  if (!modelSelected()) {
+    $("model").value = "";
+    $("model-status").textContent = modelHint;
+    previous?.dispose();
+    updateControls();
+    return; // Never let an empty/unknown choice fall back to the SDK default.
+  }
+  const name = $("model").value, backend = $("backend").value;
+  const abort = new AbortController(), job = { name, backend, abort };
+  loadingModel = job;
   $("model-progress").hidden = false;
-  $("model-status").textContent = "Preparing model…";
-  $("model").disabled = $("backend").disabled = true;
+  $("model-progress").removeAttribute("value");
+  $("model-status").textContent = `Preparing ${$("model").selectedOptions[0].textContent}…`;
   updateControls();
   try {
+    previous?.dispose();
+    if (!["auto", "wasm"].includes(backend)) throw new Error("Choose Auto / GPU or CPU / WASM as the backend.");
     const { Kevala } = await import("/vendor/kevala/index.js");
-    model = await Kevala.load({
-      model: name, backend: $("backend").value, signal: abort.signal,
+    if (abort.signal.aborted) return;
+    const loaded = await Kevala.load({
+      model: name, backend, signal: abort.signal,
       onProgress: (p) => {
+        if (loadingModel !== job || abort.signal.aborted) return;
         $("model-status").textContent = p.message || `${p.phase}${p.total ? ` · ${Math.round(p.loaded / p.total * 100)}%` : "…"}`;
         if (p.total) { $("model-progress").max = p.total; $("model-progress").value = p.loaded; }
         else $("model-progress").removeAttribute("value");
       },
     });
+    // Some initialization work may finish after cancellation. Never install it.
+    if (abort.signal.aborted) { loaded.dispose(); return; }
+    model = loaded;
     $("model-status").textContent = `${name} ready · ${model.info.backend}${model.info.gpuUnavailable ? " · GPU unavailable" : ""}`;
     $("model-status").title = model.info.gpuUnavailable || "Inference stays on this device.";
-    $("load-model").textContent = "Reload";
   } catch (error) {
-    $("model-status").textContent = abort.signal.aborted ? "Model download cancelled. Load a model to enable Start or Step." : `Model load failed: ${error.message}`;
-    if (!abort.signal.aborted) throw error;
+    if (!abort.signal.aborted) {
+      $("model-status").textContent = `Model load failed: ${error.message} Select a model to retry.`;
+      throw error;
+    }
   } finally {
+    if (abort.signal.aborted) $("model-status").textContent = "Model download cancelled. Select a model to retry.";
+    // Reset on failure/cancel so choosing the same model fires change again.
+    if (!model) $("model").value = "";
+    const focusChoice = document.activeElement === $("cancel-model");
     loadingModel = null;
     $("model-progress").hidden = true;
-    $("model").disabled = $("backend").disabled = false;
     updateControls();
+    if (focusChoice) $("model").focus();
   }
-}));
-$("cancel-model").addEventListener("click", () => loadingModel?.abort());
-$("cancel-model-prompt").addEventListener("click", () => $("model-required").close());
-$("confirm-model-prompt").addEventListener("click", () => {
-  $("model-required").close();
-  if (!modelSelected()) { $("model").focus(); return; }
-  // The prompt never downloads or queues gameplay until the user explicitly confirms.
-  if (!(agent?.getModel() || model) && !loadingModel && !operation) $("load-model").click();
+}
+$("cancel-model").addEventListener("click", () => {
+  if (!loadingModel) return;
+  loadingModel.abort.abort();
+  $("model-status").textContent = "Cancelling model download…";
+  updateControls();
 });
-$("model").addEventListener("change", updateControls);
+$("model").addEventListener("change", () => guard(loadSelectedModel));
+$("backend").addEventListener("change", () => {
+  // A backend preference alone must not choose or download a default model.
+  if (modelSelected() || loadingModel) void guard(loadSelectedModel);
+});
 $("pause").addEventListener("click", stop);
 $("step").addEventListener("click", () => playFromGesture(step));
 $("auto").addEventListener("click", () => playFromGesture(runAuto));
@@ -266,7 +293,6 @@ $("export").addEventListener("click", () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 addEventListener("keydown", (event) => {
-  if ($("model-required").open) return; // Let the dialog own focus and Escape.
   if (event.target.closest("input, select, textarea, button, summary, a") || event.ctrlKey || event.metaKey || event.altKey) return;
   let button;
   if (event.code === "KeyP" || event.code === "Escape") button = $("pause");

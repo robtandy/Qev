@@ -24,13 +24,13 @@
       <div class="setup-row">
         <label class="map-setting">Map <select id="map" title="Changing the map loads it immediately and stops the game" disabled><option>Loading demo…</option></select></label>
         <label class="difficulty-setting">Difficulty <select id="difficulty" title="Changing difficulty reloads the current map and stops the game" disabled><option value="0">Easy</option><option value="1">Normal</option><option value="2" selected>Hard</option><option value="3">Nightmare</option></select></label>
-        <label class="model-setting">Model <select id="model" required><option value="" disabled selected>Choose a decision model</option><option value="laya">Laya · 479 MB</option><option value="kev-0.8b">Kev · 857 MB</option></select></label>
+        <label class="model-setting needs-selection">Model <select id="model" required aria-describedby="model-status"><option value="" disabled selected>Choose a decision model</option><option value="laya">Laya · 479 MB</option><option value="kev-0.8b">Kev · 857 MB</option></select></label>
         <label class="backend-setting">Backend <select id="backend"><option value="auto">Auto / GPU</option><option value="wasm">CPU / WASM</option></select></label>
-        <button id="load-model" disabled>Load model</button><button id="cancel-model" hidden>Cancel</button>
+        <button id="cancel-model" aria-label="Cancel model download" hidden>Cancel</button>
       </div>
       <div class="setup-status">
         <div><span id="asset-status" role="status">Preparing LibreQuake…</span> <a href="/demo/NOTICE.txt" target="_blank" rel="noreferrer">Licenses</a> <a id="retry-demo" href="/" hidden>Reload demo</a></div>
-        <span id="model-status" role="status">Model downloads only on Load.</span>
+        <span id="model-status" role="status">Choose a model · selecting downloads it if needed.</span>
       </div>
       <progress id="asset-progress" aria-label="Loading LibreQuake data" hidden></progress>
       <progress id="model-progress" aria-label="Loading decision model" hidden></progress>
@@ -53,7 +53,7 @@
       </div>
       <aside class="inspector" aria-label="Decision inspector">
         <div class="inspector-head"><div><h2>Decisions</h2><p class="small muted">Last 5 · newest first</p></div><button id="export" disabled>Export trace</button></div>
-        <ol id="decisions" aria-label="Latest five decisions, newest first"><li class="empty">Load a model, then choose Start or Step. Decisions will appear here.</li></ol>
+        <ol id="decisions" aria-label="Latest five decisions, newest first"><li class="empty">Choose a model above to load it, then Start or Step. Decisions will appear here.</li></ol>
       </aside>
     </section>
     <p id="error" class="error" role="alert" hidden></p>
@@ -66,11 +66,6 @@
     <a href="https://github.com/GMH-Code/Qwasm" target="_blank" rel="noopener noreferrer">qwasm</a>
     <a href="https://github.com/lavenderdotpet/LibreQuake" target="_blank" rel="noopener noreferrer">libre quake</a>
   </footer>
-  <dialog id="model-required" aria-labelledby="model-required-title" aria-describedby="model-required-message">
-    <h2 id="model-required-title">Load a model first</h2>
-    <p id="model-required-message">A decision model is required to start playing.</p>
-    <div class="dialog-actions"><button id="cancel-model-prompt" autofocus>Cancel</button><button id="confirm-model-prompt" class="primary">Load model</button></div>
-  </dialog>
   <script type="module" src="/src/app.js"></script>
 </body>
 </html>

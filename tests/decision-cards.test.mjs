@@ -139,6 +139,10 @@ test("the HTML keeps the card feed and compact controls without the old game pan
   assert.doesNotMatch(masthead, /kevala|Local experiment|software renderer|class="badge"/i);
   assert.doesNotMatch(html, /id="(?:history|human|stats|health|armor|weapon|threats|navigation-status|navigation|observation|engine-log|game-state)"/);
   assert.doesNotMatch(html, /Play yourself|class="screen-label"|id="(?:restart|score|frame)"/);
+  assert.doesNotMatch(html, /id="(?:load-model|model-required|confirm-model-prompt|cancel-model-prompt)"/);
+  assert.match(html, /class="model-setting needs-selection">Model <select id="model" required aria-describedby="model-status">/);
+  assert.match(html, /id="model-status" role="status">Choose a model · selecting downloads it if needed\./);
+  assert.match(html, /id="cancel-model" aria-label="Cancel model download" hidden/);
   const selector = html.match(/<select id="model"[^>]*>([\s\S]*?)<\/select>/)[1];
   assert.match(selector, /^<option value="" disabled selected>Choose a decision model<\/option>/);
   assert.match(selector, /value="laya"/);

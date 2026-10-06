@@ -8,6 +8,7 @@ import { makeServer, root } from "./serve.mjs";
 import { DEMO } from "../src/demo-manifest.js";
 import { compareDecisions } from "./compare-decisions.mjs";
 import { beginAudioChecks, checkAudioPlayback } from "./browser-audio.mjs";
+import { checkModelSelection } from "./browser-model-selection.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, timeout = 30_000) {
@@ -99,7 +100,7 @@ try {
   await checkDemoOnly("legacy asset-mode URLs cannot re-enable manual import");
   await check("legacy URLs still start the same demo", `return qev.engine.snapshot().paused && qev.engine.snapshot().map === '${DEMO.map}' && !qev.model;`);
   await navigate("/");
-  await check("model downloading still requires an explicit action", `return !qev.model && document.querySelector('#step').disabled;`);
+  await check("model downloading waits for an explicit selection", `return !qev.model && document.querySelector('#step').disabled;`);
   await until(() => evaluate("!!qev.engine"), 45_000);
   console.log("Map:", await evaluate("document.querySelector('#map').value"));
   await check("the demo starts paused with all three matching PAKs", `
@@ -149,59 +150,8 @@ try {
       document.querySelector('#map').value === 'lq_e0m6' && document.querySelector('#difficulty').value === '2' && !document.querySelector('#difficulty').disabled &&
       [...document.querySelector('#difficulty').options].map(o=>o.value).join(',') === '0,1,2,3' && !document.querySelector('.intro');
   `);
-  await check("the model dropdown starts with a required choice, never a default model", `
-    const select=document.querySelector('#model');
-    return select.value==='' && select.required && select.selectedOptions[0].textContent==='Choose a decision model' &&
-      select.selectedOptions[0].disabled && document.querySelector('#load-model').disabled && document.querySelector('#step').disabled && !qev.model;
-  `);
-  await until(()=>evaluate("!document.querySelector('#auto').disabled"));
-  await evaluate("window.beforeModelPrompt=qev.engine.snapshot();document.querySelector('#auto').click()");
-  await check("Start requires choosing Kev or Laya before any load confirmation", `
-    return document.querySelector('#model-required').open && document.querySelector('#model-required-title').textContent==='Choose a decision model' &&
-      document.querySelector('#confirm-model-prompt').textContent==='Choose model' &&
-      document.querySelector('#model-required-message').textContent.includes('Kev or Laya') && !qev.model && qev.engine.snapshot().paused;
-  `);
-  await evaluate("document.querySelector('#confirm-model-prompt').click()");
-  await check("Choose model focuses the dropdown without selecting or downloading anything", `
-    return !document.querySelector('#model-required').open && document.activeElement===document.querySelector('#model') &&
-      document.querySelector('#model').value==='' && document.querySelector('#load-model').disabled && !qev.model;
-  `);
-  await evaluate("document.querySelector('#load-model').dispatchEvent(new MouseEvent('click',{bubbles:true}))");
-  await check("even a forced Load event cannot fall back to an unselected default model", `
-    return document.querySelector('#model-required').open && document.querySelector('#confirm-model-prompt').textContent==='Choose model' &&
-      document.querySelector('#model-progress').hidden && !qev.model && qev.engine.snapshot().tick===beforeModelPrompt.tick;
-  `);
-  await evaluate("document.querySelector('#cancel-model-prompt').click();document.querySelector('#model').value='laya';document.querySelector('#model').dispatchEvent(new Event('change',{bubbles:true}))");
-  await check("selecting Laya enables loading without starting it automatically", `
-    return document.querySelector('#model').value==='laya' && !document.querySelector('#load-model').disabled && !qev.model;
-  `);
-  await evaluate("document.querySelector('#auto').click()");
-  await check("Start without a model opens a load prompt while keeping the game stopped", `
-    const prompt=document.querySelector('#model-required');
-    return prompt.open && prompt.getAttribute('aria-labelledby')==='model-required-title' &&
-      document.querySelector('#model-required-message').textContent.includes('Laya · 479 MB') &&
-      !qev.model && qev.engine.snapshot().paused && qev.engine.snapshot().tick===beforeModelPrompt.tick &&
-      qev.agent.history.length===0 && document.querySelector('#auto').getAttribute('aria-pressed')==='false';
-  `);
-  const modelPrompt=await call('Page.captureScreenshot',{format:'png'});
-  await writeFile(resolve(root,'build/qev-model-prompt.png'),Buffer.from(modelPrompt.data,'base64'));
-  await evaluate("document.querySelector('#cancel-model-prompt').click()");
-  await check("cancelling the prompt leaves Start available and never loads or runs a model", `
-    return !document.querySelector('#model-required').open && !qev.model && !document.querySelector('#auto').disabled &&
-      document.querySelector('#step').disabled && qev.engine.snapshot().paused && qev.engine.snapshot().tick===beforeModelPrompt.tick;
-  `);
-  await evaluate("document.querySelector('#model').value='kev-0.8b';document.querySelector('#model').dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('#auto').click()");
-  await check("the prompt identifies the selected model and its download size", `
-    return document.querySelector('#model-required-message').textContent.includes('Kev · 857 MB');
-  `);
-  await call('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
-  await call('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
-  await until(()=>evaluate("!document.querySelector('#model-required').open"));
-  await check("Escape dismisses the prompt without starting a download or the simulation", `
-    return !qev.model && qev.engine.snapshot().paused && qev.engine.snapshot().tick===beforeModelPrompt.tick;
-  `);
-  await evaluate("document.querySelector('#model').value=''");
-  assert.deepEqual(requests.filter(url=>/^https?:/.test(url) && !url.startsWith('http://127.0.0.1:8091/')),[], 'opening or cancelling the prompt must not initiate remote/model requests');
+  await checkModelSelection({ evaluate, check, until });
+  assert.deepEqual(requests.filter(url=>/^https?:/.test(url) && !url.startsWith('http://127.0.0.1:8091/')),[], 'startup, Start without a choice, and the fake loading checks must not fetch real model weights');
   await call("Emulation.setDeviceMetricsOverride", { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   await sleep(100);
   await checkBrandLayout('the steel logo and tagline fit the laptop header');
@@ -239,7 +189,6 @@ try {
     return now.ready && now.alive && now.paused && now.tick === beforePause.tick && JSON.stringify(now.player.position) === JSON.stringify(beforePause.player.position);
   `);
   console.log("Initial full-level snapshot:", await evaluate("qev.engine.snapshot()"));
-  await evaluate("document.querySelector('#model').value='laya';document.querySelector('#model').dispatchEvent(new Event('change',{bubbles:true}))");
   await check("only the game remains in its column; the old panels, picker, and human button are removed", `
     const column=document.querySelector('.game-column');
     return column.children.length===1 && column.firstElementChild.className==='screen' &&
@@ -687,17 +636,16 @@ try {
   await evaluate("(async()=>{qev.agent.invalidate();await qev.engine.loadMap('qev_encounter',0);document.querySelector('#map').value='qev_encounter';document.querySelector('#difficulty').value='0';})()");
   if (runModel) {
     await evaluate("qev.agent.getModel = originalModel; qev.agent.invalidate()");
-    await until(()=>evaluate("!document.querySelector('#auto').disabled"));
-    await evaluate("document.querySelector('#auto').click()");
-    await until(()=>evaluate("document.querySelector('#model-required').open"));
-    await evaluate("document.querySelector('#confirm-model-prompt').click()");
-    await check("confirming Load model closes the prompt and blocks Start while loading", `
-      return !document.querySelector('#model-required').open && document.querySelector('#auto').disabled &&
-        qev.engine.snapshot().paused && qev.playMode==='inspection';
+    await until(()=>evaluate("!document.querySelector('#model').disabled"));
+    await evaluate("document.querySelector('#model').value='laya';document.querySelector('#model').dispatchEvent(new Event('change',{bubbles:true}))");
+    await check("choosing Laya directly loads the real model and blocks Start while loading", `
+      return document.querySelector('#model').value==='laya' && document.querySelector('#model').disabled &&
+        document.querySelector('#auto').disabled && !document.querySelector('#cancel-model').hidden &&
+        !document.querySelector('#load-model, #model-required') && qev.engine.snapshot().paused && qev.playMode==='inspection';
     `);
     await evaluate(`(async () => { for (let i = 0; i < 90 && !qev.engine.snapshot().player.grounded; i++) await qev.engine.frame(); })()`);
     await until(() => evaluate("!!qev.model"), 300_000);
-    await check("loading from the prompt does not automatically resume play", `
+    await check("loading real Laya from the dropdown does not automatically resume play", `
       return qev.engine.snapshot().paused && qev.playMode==='inspection' && !document.querySelector('#auto').disabled &&
         document.querySelector('#auto').getAttribute('aria-pressed')==='false';
     `);
