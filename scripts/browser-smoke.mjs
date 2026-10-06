@@ -109,12 +109,26 @@ try {
   `);
   assert.deepEqual(requests.filter((url) => /^https?:/.test(url) && !url.startsWith('http://127.0.0.1:8091/')), [], "automatic game startup makes no remote/model requests");
   await beginAudioChecks({ check });
-  await check("the header and browser title use the requested decision-model branding", `
-    const header=document.querySelector('.masthead');
-    return header.querySelector('h1').textContent==='Qev - quake + decision model' &&
-      document.title==='Qev - quake + decision model' && !header.querySelector('.badge') &&
+  await check("the steel QEV logo loads beside the exact tagline and survives SDL title initialization", `
+    const header=document.querySelector('.masthead'), logo=header.querySelector('.brand-logo');
+    await logo.decode();
+    const response=await fetch(logo.currentSrc,{method:'HEAD'});
+    return logo.alt==='QEV' && new URL(logo.currentSrc).pathname==='/brand/qev-logo.svg' &&
+      logo.naturalWidth===1200 && logo.naturalHeight===560 && response.headers.get('content-type')==='image/svg+xml' &&
+      header.querySelector('h1').textContent==='quake played by a local decision model' &&
+      document.title==='QEV - quake played by a local decision model' && !header.querySelector('.mark, .badge') &&
       !/kevala|Local experiment|software renderer/i.test(header.textContent);
   `);
+  const checkBrandLayout=label=>check(label, `
+    const header=document.querySelector('.masthead').getBoundingClientRect(), logo=document.querySelector('.brand-logo').getBoundingClientRect();
+    const heading=document.querySelector('.brand h1'), text=heading.getBoundingClientRect(), links=document.querySelector('.header-links').getBoundingClientRect();
+    if(logo.width<90 || logo.height<40 || text.left<logo.right+4 || text.right>links.left-4 ||
+      Math.ceil(text.width)<heading.scrollWidth || links.right>innerWidth ||
+      Math.max(logo.bottom,text.bottom,links.bottom)>header.bottom || document.documentElement.scrollWidth>innerWidth)
+      throw new Error('Brand layout: '+JSON.stringify({header:header.toJSON(),logo:logo.toJSON(),text:text.toJSON(),links:links.toJSON(),viewport:[innerWidth,innerHeight]}));
+    return true;
+  `);
+  await checkBrandLayout('the tagline stays to the right of the steel logo without overlapping project links');
   await check("the upper-right header links to the actual GitHub repo and reserves an X icon without a fake URL", `
     const links=document.querySelector('.header-links'), repo=links.querySelector('#repo-link'), post=links.querySelector('#x-post-link');
     return repo.href==='https://github.com/robtandy/Qev' && repo.target==='_blank' && repo.relList.contains('noopener') &&
@@ -190,6 +204,7 @@ try {
   assert.deepEqual(requests.filter(url=>/^https?:/.test(url) && !url.startsWith('http://127.0.0.1:8091/')),[], 'opening or cancelling the prompt must not initiate remote/model requests');
   await call("Emulation.setDeviceMetricsOverride", { width: 1366, height: 768, deviceScaleFactor: 1, mobile: false });
   await sleep(100);
+  await checkBrandLayout('the steel logo and tagline fit the laptop header');
   await check("the larger game stays above the fold with decisions beside it", `
     const r=document.querySelector('.screen').getBoundingClientRect(), side=document.querySelector('.inspector').getBoundingClientRect();
     if(scrollY!==0 || r.height<500 || r.width<900 || r.bottom>innerHeight || side.left<r.right || side.bottom>r.bottom+1 || document.documentElement.scrollWidth>innerWidth) throw new Error('Laptop layout: '+JSON.stringify({screen:r.toJSON(),inspector:side.toJSON(),viewport:[innerWidth,innerHeight],scrollY,setup:document.querySelector('.setup').getBoundingClientRect().toJSON(),playback:document.querySelector('.playback').getBoundingClientRect().toJSON()}));
@@ -199,6 +214,7 @@ try {
   await writeFile(resolve(root,'build/qev-cards-empty-desktop.png'),Buffer.from(compactDesktop.data,'base64'));
   await call("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await sleep(100);
+  await checkBrandLayout('the mobile tagline wraps beside the logo rather than covering it or the links');
   await check("compact setup leaves the complete mobile game above the fold", `
     const brand=document.querySelector('.brand').getBoundingClientRect(), links=document.querySelector('.header-links').getBoundingClientRect();
     if(brand.right>links.left || links.right>innerWidth) throw new Error('Mobile header overlap');
@@ -208,6 +224,11 @@ try {
   `);
   const compactMobile = await call("Page.captureScreenshot", {format:'png'});
   await writeFile(resolve(root,'build/qev-cards-empty-mobile.png'),Buffer.from(compactMobile.data,'base64'));
+  await call("Emulation.setDeviceMetricsOverride", { width: 320, height: 740, deviceScaleFactor: 1, mobile: true });
+  await sleep(100);
+  await checkBrandLayout('the full logo and tagline also fit a narrow 320px viewport');
+  const narrowHeader=await call('Page.captureScreenshot',{format:'png'});
+  await writeFile(resolve(root,'build/qev-steel-header-narrow.png'),Buffer.from(narrowHeader.data,'base64'));
   await call("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1100, deviceScaleFactor: 1, mobile: false });
   const initial = await call("Page.captureScreenshot", { format: "png" });
   await writeFile(resolve(root, "build/qev-demo-start.png"), Buffer.from(initial.data, "base64"));

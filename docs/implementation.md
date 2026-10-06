@@ -155,10 +155,13 @@ by default.
 Its content comes directly from `requests[].state`, not `sharedState`, current telemetry, or
 candidate prose. A single shared-state request is displayed verbatim; a baseline batch shows
 all request states as a JSON array in request order. Its Copy control uses the same text.
-Text is never interpreted as HTML. The heading and browser title are **Qev - quake +
-decision model**; startup restores that title after SDL initializes its own window caption.
-The masthead shows this brand on the left, with a
-GitHub repository link and an inactive 𝕏 post-link slot on the right. The X icon has no
+Text is never interpreted as HTML. The masthead uses the steel **QEV** SVG wordmark with
+**quake played by a local decision model** to its right, replacing the old boxed Q and
+heading. The logo has QEV alternative text and fixed intrinsic dimensions; the tagline
+wraps beside it on narrow screens without overlapping the project links. SVG assets are
+served as `image/svg+xml`. The browser title is **QEV - quake played by a local decision
+model**; startup restores it after SDL initializes its own window caption. The masthead
+keeps the GitHub repository link and inactive 𝕏 post-link slot on the right. The X icon has no
 fabricated URL; it will be enabled when the actual post exists. Pressed primary buttons
 retain dark text and full opacity, so the disabled/running Start label stays readable.
 

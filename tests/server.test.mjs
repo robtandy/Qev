@@ -6,6 +6,26 @@ import { join } from "node:path";
 import { makeServer } from "../scripts/serve.mjs";
 import { DEMO_DIRECTORY } from "../scripts/demo-assets.mjs";
 
+test("public SVG branding is served with an image MIME type and matching GET/HEAD headers", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "qev-brand-server-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "public/brand"), { recursive: true });
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"><title>QEV</title></svg>';
+  await writeFile(join(root, "public/brand/qev-logo.svg"), svg);
+  const server = makeServer(root);
+  await new Promise(r => server.listen(0, "127.0.0.1", r));
+  t.after(() => new Promise(r => server.close(r)));
+  const url = `http://127.0.0.1:${server.address().port}/brand/qev-logo.svg`;
+  for (const method of ["GET", "HEAD"]) {
+    const response = await fetch(url, { method });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "image/svg+xml");
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(Number(response.headers.get("content-length")), Buffer.byteLength(svg));
+    assert.equal(await response.text(), method === "GET" ? svg : "");
+  }
+});
+
 test("development server serves only explicit mounts, never user game assets or project secrets", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "qev-server-"));
   t.after(() => rm(root, { recursive: true, force: true }));

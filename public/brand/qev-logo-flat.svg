@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title"><title id="title">QEV</title><defs>
+    <g id="qev-letters">
+      <!-- Q: a solid forged ring with a nail-headed descending stem. -->
+      <path fill-rule="evenodd" d="M250 64 A166 166 0 1 1 250 396 A166 166 0 1 1 250 64 Z M250 125 A105 105 0 1 0 250 335 A105 105 0 1 0 250 125 Z"/>
+      <path d="M218 256 H282 V269 L272 281 V421 L250 508 L228 421 V281 L218 269 Z"/>
+      <!-- E: the same broad metal, flared caps, and chisel-cut terminals. -->
+      <path d="M470 78 H718 L708 145 L684 128 H548 V211 H653 L680 192 V274 L653 256 H548 V344 H685 L718 315 L724 396 H470 L488 376 V98 Z"/>
+      <!-- V: capped pillars converge into a deep, blade-like point. -->
+      <path d="M776 78 H888 V94 L867 108 L949 319 L1030 108 L1009 94 V78 H1122 V94 L1093 111 L959 426 L947 453 L800 111 L776 94 Z"/>
+    </g></defs><use href="#qev-letters" fill="currentColor"/></svg>
