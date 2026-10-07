@@ -31,9 +31,11 @@ The goal is **SURVIVE**. Default priorities: avoid harm, get supplies, handle th
 Reorder **Priorities** beside Decisions to change the prompt; reordering stops play.
 Qwasm runs Quake in WebAssembly; a local decision model chooses short actions in a browser worker.
 **Assistance on** uses engine telemetry, geometry/GPS, aim assistance, and tactical shortlisting.
-**Off** uses HUD facts and coarse engine-labelled visible objects with fixed movement/look/fire
-inputs—no probes, GPS memory, target tracking, or hazard vetoes. It can miss and walk into danger.
-Neither mode is screen/audio perception or human-equivalent play. Use **Start at 1×** for real-time comparisons.
+**Off** uses HUD facts and renderer-labelled visible pixels: screen position, apparent size,
+aim-center overlap, and cautious size-change cues. Depth is uncertain—not exact distance.
+Its fixed movement/look/fire inputs have no probes, GPS, tracking, or hazard vetoes.
+Engine labels remain a concession; neither mode is RGB-only vision or human-equivalent play.
+Use **Start at 1×** for real-time comparisons.
 
 The five newest decision cards show the exact model input, response, and action probabilities.
 Experimental: it can get stuck and cannot automatically jump or swim.

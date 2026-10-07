@@ -53,7 +53,7 @@ export class Engine {
       print: report, printErr: report, onAbort: (message) => { fault ||= new Error(`Quake stopped: ${message}`); },
       locateFile: (file) => `/engine/${file}`,
     });
-    if (["_qev_auto", "_qev_live_action", "_qev_new_game", "_qev_assistance", "_qev_input_action", "_qev_live_input"].some(name => typeof module[name] !== "function")) throw new Error("Engine build is out of date. Run npm run build:engine, then reload.");
+    if (["_qev_auto", "_qev_live_action", "_qev_new_game", "_qev_assistance", "_qev_input_action", "_qev_live_input", "_qev_screen_version"].some(name => typeof module[name] !== "function") || module._qev_screen_version() !== 1) throw new Error("Engine build is out of date. Run npm run build:engine, then reload.");
     module.hideConsole = () => {};
     module.showConsole = () => onLog(fault ? "Quake stopped. Correct the error above, then reload the page." : "Quake console opened. Use the game canvas when playing manually.");
     module.captureMouse = () => {}; // pointer lock is only requested by an explicit canvas click

@@ -1,6 +1,6 @@
 # Qwasm integration source
 
-Qev's engine bridge and the modifications in `qwasm.patch` are provided under the
+Qev's engine bridge, visible-pixel reducer and the modifications in `qwasm.patch` are provided under the
 **GNU General Public License, version 2 or (at your option) any later version**,
 consistent with the Quake/Qwasm engine. They are provided without warranty.
 [`COPYING`](COPYING) is the license text copied verbatim from the pinned Qwasm source.
@@ -16,13 +16,16 @@ retains upstream source headers and notices, including later Qwasm contributions
 - Source/build procedure: [`../scripts/build-engine.mjs`](../scripts/build-engine.mjs)
   and the setup instructions in [`../README.md`](../README.md).
 
-The patch changes input ownership, world/entity lifecycle hooks, and the main loop
-in six upstream `WinQuake` files. The added `qev_bridge.c` and `qev_bridge.h` provide
-view-cone/LOS-filtered observations, assisted movement/aim and privileged geometry probes,
-an optional coarse-telemetry/raw-input mode with those aids disabled, fixed simulation ticks,
-pause/step and real-time input leases, matching SDL audio pauses, and map/difficulty
-loading. Off mode redacts coordinates/IDs and disables the probe API; mode changes invalidate
-old observation epochs without restarting the map. Neither mode derives perception from pixels. The build script adds the bridge to the makefile and removes asset preloading.
+The patch changes input ownership, world/entity lifecycle hooks and the main loop in six
+upstream `WinQuake` files. Six additional renderer hooks (`r_main`, `d_edge`, `d_polyse`,
+`d_sprite`, `d_part`, `d_scan`) attribute actually drawn 3D-view pixels, including occlusion
+and water-warp remapping. `qev_bridge.c/h` provide assisted telemetry/movement/aim/geometry,
+optional raw relative inputs, fixed ticks, pause/step/live leases, matching SDL audio pauses,
+and map/difficulty loading. `qev_pixels.c/h` reduce visible label coverage to 2D bounds/counts
+and aim-center overlap, with no world-coordinate or depth-buffer inputs. Engine labels remain
+an explicit concession, not RGB-only vision. Off mode returns these pixel measurements
+instead of ranges/IDs, and disables the probe API. Mode changes invalidate observation epochs
+without restarting the map. The build script adds both modules and removes asset preloading.
 
 This repository publishes integration source, not compiled engine releases or game
 assets. The build fetches the specified upstream source into ignored `build/qwasm/`,

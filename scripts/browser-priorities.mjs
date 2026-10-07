@@ -157,9 +157,9 @@ export async function checkPriorities({ evaluate, check, until, call, dragEvents
       try {document.querySelector('#export').click();}
       finally {URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}
     })()`);
-    await check("version-6 traces distinguish the active priority order from each decision's original order", `
+    await check("version-7 traces distinguish the active priority order from each decision's original order", `
       const trace=await priorityTest.exported, {objectivesFor}=await import('/src/objective.js');
-      return trace.version===6 && JSON.stringify(trace.priorityOrder)===JSON.stringify(qev.priorityOrder) &&
+      return trace.version===7 && JSON.stringify(trace.priorityOrder)===JSON.stringify(qev.priorityOrder) &&
         JSON.stringify(trace.objectives)===JSON.stringify(objectivesFor(qev.priorityOrder)) &&
         trace.records[0].priorityOrder[0]==='explore' && trace.records[0].requests[0].state===priorityTest.originalState &&
         trace.records.every(record=>record.priorityOrder.length===4 && record.objectives.length===4);

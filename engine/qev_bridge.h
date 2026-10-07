@@ -4,6 +4,10 @@
  */
 #ifndef QEV_BRIDGE_H
 #define QEV_BRIDGE_H
+#include "qev_pixels.h"
+void Qev_BeginView(int unsupported);
+void Qev_DrawEntity(entity_t *entity);
+void Qev_EndView(void);
 void Qev_MainLoop(void);
 void Qev_PreRender(void);
 int Qev_OwnsInput(void);

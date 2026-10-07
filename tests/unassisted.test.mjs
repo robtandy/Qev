@@ -12,8 +12,9 @@ import { replies } from "./replies.mjs";
 const observation = () => ({ ready: true, paused: true, alive: true, completed: false, assistance: "unassisted",
   epoch: 4, tick: 20, map: "test", remaining: 0, owned: true, controlSession: 1, actionSerial: 0, actionTicks: 0, actionTicksLeft: 0,
   player: { health: 50, armor: 20, ammo: 25, weapon: "shotgun", silverKey: false, goldKey: true },
-  enemies: [{ kind: "monster_army", visible: true, bearing: "left", elevation: "level", range: "nearby" }],
-  pickups: [{ kind: "health", visible: true, bearing: "right", elevation: "below", range: "medium range" }] });
+  screen: { source: "renderer-visible-pixels", available: true, frame: 20, tick: 20, distorted: false, viewport: [0, 0, 640, 432] },
+  enemies: [{ kind: "monster_army", visible: true, screen: { bounds: [0.2, 0.35, 0.4, 0.65], pixels: 3000, aimOverlap: false, clipped: false, sameKindCount: 1 } }],
+  pickups: [{ kind: "health", visible: true, screen: { bounds: [0.7, 0.6, 0.75, 0.7], pixels: 400, aimOverlap: false, clipped: false, sameKindCount: 1 } }] });
 const forbidden = () => assert.fail("assistance-off must not query privileged telemetry or geometry");
 function poison(object, fields) {
   for (const key of fields) Object.defineProperty(object, key, { get: forbidden });
@@ -44,8 +45,8 @@ test("assistance defaults on and both modes disclose their actual sensing/contro
   assert.equal(assistanceOf({}), "assisted");
   for (const value of ["assisted", "unassisted"]) assert.equal(validateAssistance(value), value);
   assert.match(ASSISTANCE.assisted.observationPolicy, /privileged local geometry/);
-  assert.match(ASSISTANCE.unassisted.observationPolicy, /not pixels\/audio/);
-  assert.match(ASSISTANCE.unassisted.note, /walls\/hazards are unknown/);
+  assert.match(ASSISTANCE.unassisted.observationPolicy, /not RGB-only vision/);
+  assert.match(ASSISTANCE.unassisted.note, /no probes, GPS, auto-aim/);
   for (const value of [undefined, null, true, false, "off", "raw", 0, 1]) assert.throws(() => validateAssistance(value), /Invalid assistance/);
   assert.throws(() => assistanceOf({ assistance: null }), /Invalid assistance/);
 });
@@ -54,7 +55,7 @@ for (const decisionFormat of ["choice", "noul"]) {
   test(`${decisionFormat} assistance-off never queries geometry, GPS, exact bearings, IDs or navigation`, () => {
     const s = observation();
     poison(s.player, ["position", "yaw", "pitch", "grounded", "inWater"]);
-    for (const e of [...s.enemies, ...s.pickups]) poison(e, ["position", "distance", "bearingRight", "slot", "generation", "health", "intent"]);
+    for (const e of [...s.enemies, ...s.pickups]) poison(e, ["position", "distance", "bearingRight", "bearing", "elevation", "range", "slot", "generation", "health", "intent"]);
     const navigation = new Proxy({}, { get: forbidden });
     const r = prepareDecision(s, forbidden, null, { realtime: true, decisionFormat, navigation });
     assert.equal(r.assistance, "unassisted");
@@ -68,8 +69,8 @@ for (const decisionFormat of ["choice", "noul"]) {
     assert.match(situation(s), /HUD: health 50/);
     for (const request of r.requests) {
       assert.match(request.state, /Assistance OFF/);
-      assert.match(request.state, /armed grunt left, level, nearby/);
-      assert.match(request.state, /health right, below, medium range/);
+      assert.match(request.state, /armed grunt left\/level \(30,50\), large h30%, aim off/);
+      assert.match(request.state, /health right\/below \(73,65\), small h10%, aim off/);
       assert.doesNotMatch(request.state, /LOS blocked|LOS clear|clear floor|new cell|visited grid|waypoint|enemy farther|enemy closer|silver key required/);
     }
   });
@@ -108,10 +109,10 @@ test("relative input parameters encode ordinary view-relative axes/rates, not ta
 
 test("raw prompt formatting excludes unobserved contacts and never falls back to exact telemetry", () => {
   const s = observation(); s.enemies.push({ kind: "HIDDEN_ENEMY", visible: false });
-  Object.assign(s.enemies[0], { bearing: undefined, elevation: "SECRET_ANGLE", range: 123, bearingRight: 20, distance: 90, slot: 9999, position: [999, 999, 999] });
+  Object.assign(s.enemies[0], { screen: null, bearing: undefined, elevation: "SECRET_ANGLE", range: 123, bearingRight: 20, distance: 90, slot: 9999, position: [999, 999, 999] });
   s.player.hidden = "SECRET_PLAYER_FIELD";
   const text = unassistedState(s);
-  assert.match(text, /armed grunt unknown, unknown, unknown/);
+  assert.match(text, /Enemies: none visible/);
   assert.doesNotMatch(text, /SECRET_|HIDDEN_ENEMY|999|distance|bearingRight/);
 });
 

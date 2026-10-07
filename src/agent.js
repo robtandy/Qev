@@ -2,6 +2,7 @@ import { distance, prepareDecision, rankResponses, DEFAULT_DECISION_FORMAT, vali
 import { ExplorationMemory } from "./navigation.js";
 import { DEFAULT_PRIORITY_ORDER, validatePriorityOrder } from "./objective.js";
 import { DEFAULT_ASSISTANCE, assistanceOf } from "./assistance.js";
+import { ScreenMemory } from "./screen.js";
 
 /** DOM-free lifecycle: frozen score/step inspection, or single-flight real-time decisions. */
 export class Agent {
@@ -21,6 +22,7 @@ export class Agent {
     this.executing = false;
     this.memory = null;
     this.navigation = new ExplorationMemory();
+    this.screenMemory = new ScreenMemory();
     this.observedAssistance = DEFAULT_ASSISTANCE;
     this.liveSession = null;
     this.liveMap = null;
@@ -47,6 +49,7 @@ export class Agent {
     this.current = null;
     this.scoredModel = null;
     this.memory = null;
+    this.screenMemory.reset();
     this.onChange();
   }
   pause() {
@@ -71,10 +74,11 @@ export class Agent {
   observeObservation(now) {
     const assistance = assistanceOf(now);
     if (assistance !== this.observedAssistance) {
-      this.navigation.reset(); this.memory = null;
+      this.navigation.reset(); this.screenMemory.reset(); this.memory = null;
       this.observedAssistance = assistance;
     }
     if (assistance === "assisted") this.navigation.observe(now);
+    else this.screenMemory.observe(now);
   }
   liveValid(now, record) {
     return assistanceOf(now) === record.assistance && now.ready && now.alive && !now.completed && !now.paused && now.owned &&
@@ -97,7 +101,7 @@ export class Agent {
     const holding = this.active && before.actionTicksLeft > 0 && before.actionSerial === this.active.actionSerial && before.epoch === this.active.appliedAt.epoch;
     const heldCandidate = holding ? { ...this.active.eligible[this.active.selectedIndex], decisionId: this.active.id } : null;
     const heldAction = heldCandidate?.label || null;
-    const prepared = prepareDecision(before, (params) => this.engine.probe(params), this.memory, { realtime, heldAction, heldCandidate, navigation: this.navigation, decisionFormat: this.decisionFormat, priorityOrder: this.priorityOrder });
+    const prepared = prepareDecision(before, (params) => this.engine.probe(params), this.memory, { realtime, heldAction, heldCandidate, navigation: this.navigation, decisionFormat: this.decisionFormat, priorityOrder: this.priorityOrder, visual: assistanceOf(before) === "unassisted" ? this.screenMemory.describe(before) : null });
     if (!prepared.eligible.length) throw new Error("No valid actions are available.");
     const record = {
       id: ++this.sequence, status: "scoring", mode: realtime ? "realtime" : "inspection", generation: this.generation,

@@ -6,7 +6,8 @@ Repository: <https://github.com/GMH-Code/Qwasm>
 
 Reference commit: `f56b5e71e4be8effede29bae1785a5306dcc0249` (`master` when inspected).
 These are the original source-research notes. Qev now fetches this revision into ignored
-`build/qwasm`, applies `engine/qwasm.patch`, and compiles it with the new bridge. See
+`build/qwasm`, applies `engine/qwasm.patch`, and compiles it with the bridge and renderer-labelled
+visible-pixel reducer. See
 [the implementation notes](implementation.md) for the working API; proposed names and
 future steps below are preserved as design context, not a description of current status.
 

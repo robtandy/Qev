@@ -56,6 +56,200 @@ index 5812143..a626d0d 100644
  	
  	// send the unreliable message
  		CL_SendMove (&cmd);
+diff --git a/WinQuake/d_edge.c b/WinQuake/d_edge.c
+index 7a28816..0e69546 100644
+--- a/WinQuake/d_edge.c
++++ b/WinQuake/d_edge.c
+@@ -168,6 +168,17 @@ void D_CalcGradients (msurface_t *pface)
+ D_DrawSurfaces
+ ==============
+ */
++/* Every opaque edge-solved span was painted by the surface rasterizer above.
++ * Record the same 2D coverage, including brush pickups; do not inspect its depth. */
++static void Qev_LabelSurface(surf_t *s)
++{
++	espan_t *span;
++	if (!qev_pixel_capture) return;
++	Qev_DrawEntity(s->insubmodel ? s->entity : NULL);
++	for (span = s->spans; span; span = span->pnext)
++		Qev_PixelsSpan(d_viewbuffer + screenwidth * span->v + span->u, span->count);
++}
++
+ void D_DrawSurfaces (void)
+ {
+ 	surf_t			*s;
+@@ -194,6 +205,7 @@ void D_DrawSurfaces (void)
+ 
+ 			D_DrawSolidSurface (s, (int)s->data & 0xFF);
+ 			D_DrawZSpans (s->spans);
++			Qev_LabelSurface(s);
+ 		}
+ 	}
+ 	else
+@@ -322,6 +334,7 @@ void D_DrawSurfaces (void)
+ 					R_TransformFrustum ();
+ 				}
+ 			}
++			Qev_LabelSurface(s);
+ 		}
+ 	}
+ }
+diff --git a/WinQuake/d_part.c b/WinQuake/d_part.c
+index 176b76b..148f3b2 100644
+--- a/WinQuake/d_part.c
++++ b/WinQuake/d_part.c
+@@ -106,6 +106,7 @@ void D_DrawParticle (particle_t *pparticle)
+ 			{
+ 				pz[0] = izi;
+ 				pdest[0] = pparticle->color;
++				QEV_PIXEL(pdest);
+ 			}
+ 		}
+ 		break;
+@@ -119,12 +120,14 @@ void D_DrawParticle (particle_t *pparticle)
+ 			{
+ 				pz[0] = izi;
+ 				pdest[0] = pparticle->color;
++				QEV_PIXEL(pdest);
+ 			}
+ 
+ 			if (pz[1] <= izi)
+ 			{
+ 				pz[1] = izi;
+ 				pdest[1] = pparticle->color;
++				QEV_PIXEL(pdest + 1);
+ 			}
+ 		}
+ 		break;
+@@ -138,18 +141,21 @@ void D_DrawParticle (particle_t *pparticle)
+ 			{
+ 				pz[0] = izi;
+ 				pdest[0] = pparticle->color;
++				QEV_PIXEL(pdest);
+ 			}
+ 
+ 			if (pz[1] <= izi)
+ 			{
+ 				pz[1] = izi;
+ 				pdest[1] = pparticle->color;
++				QEV_PIXEL(pdest + 1);
+ 			}
+ 
+ 			if (pz[2] <= izi)
+ 			{
+ 				pz[2] = izi;
+ 				pdest[2] = pparticle->color;
++				QEV_PIXEL(pdest + 2);
+ 			}
+ 		}
+ 		break;
+@@ -163,24 +169,28 @@ void D_DrawParticle (particle_t *pparticle)
+ 			{
+ 				pz[0] = izi;
+ 				pdest[0] = pparticle->color;
++				QEV_PIXEL(pdest);
+ 			}
+ 
+ 			if (pz[1] <= izi)
+ 			{
+ 				pz[1] = izi;
+ 				pdest[1] = pparticle->color;
++				QEV_PIXEL(pdest + 1);
+ 			}
+ 
+ 			if (pz[2] <= izi)
+ 			{
+ 				pz[2] = izi;
+ 				pdest[2] = pparticle->color;
++				QEV_PIXEL(pdest + 2);
+ 			}
+ 
+ 			if (pz[3] <= izi)
+ 			{
+ 				pz[3] = izi;
+ 				pdest[3] = pparticle->color;
++				QEV_PIXEL(pdest + 3);
+ 			}
+ 		}
+ 		break;
+@@ -196,6 +206,7 @@ void D_DrawParticle (particle_t *pparticle)
+ 				{
+ 					pz[i] = izi;
+ 					pdest[i] = pparticle->color;
++					QEV_PIXEL(pdest + i);
+ 				}
+ 			}
+ 		}
+diff --git a/WinQuake/d_polyse.c b/WinQuake/d_polyse.c
+index 9acd34b..c3f0fae 100644
+--- a/WinQuake/d_polyse.c
++++ b/WinQuake/d_polyse.c
+@@ -169,6 +169,7 @@ void D_PolysetDrawFinalVerts (finalvert_t *fv, int numverts)
+ 				pix = skintable[fv->v[3]>>16][fv->v[2]>>16];
+ 				pix = ((byte *)acolormap)[pix + (fv->v[4] & 0xFF00) ];
+ 				d_viewbuffer[d_scantable[fv->v[1]] + fv->v[0]] = pix;
++				QEV_PIXEL(d_viewbuffer + d_scantable[fv->v[1]] + fv->v[0]);
+ 			}
+ 		}
+ 	}
+@@ -378,6 +379,7 @@ split:
+ 		*zbuf = z;
+ 		pix = d_pcolormap[skintable[new[3]>>16][new[2]>>16]];
+ 		d_viewbuffer[d_scantable[new[1]] + new[0]] = pix;
++		QEV_PIXEL(d_viewbuffer + d_scantable[new[1]] + new[0]);
+ 	}
+ 
+ nodraw:
+@@ -651,6 +653,7 @@ void D_PolysetDrawSpans8 (spanpackage_t *pspanpackage)
+ 				if ((lzi >> 16) >= *lpz)
+ 				{
+ 					*lpdest = ((byte *)acolormap)[*lptex + (llight & 0xFF00)];
++					QEV_PIXEL(lpdest);
+ // gel mapping					*lpdest = gelmap[*lpdest];
+ 					*lpz = lzi >> 16;
+ 				}
+diff --git a/WinQuake/d_scan.c b/WinQuake/d_scan.c
+index 008c783..4234f41 100644
+--- a/WinQuake/d_scan.c
++++ b/WinQuake/d_scan.c
+@@ -73,6 +73,9 @@ void D_WarpScreen (void)
+ 
+ 	turb = intsintable + ((int)(cl.time*SPEED)&(CYCLE-1));
+ 	dest = vid.buffer + scr_vrect.y * vid.rowbytes + scr_vrect.x;
++	if (qev_pixel_capture)
++		Qev_PixelsWarpBegin(vid.buffer, vid.rowbytes, vid.width, vid.height,
++			scr_vrect.x, scr_vrect.y, scr_vrect.width, scr_vrect.height);
+ 
+ 	for (v=0 ; v<scr_vrect.height ; v++, dest += vid.rowbytes)
+ 	{
+@@ -85,8 +88,15 @@ void D_WarpScreen (void)
+ 			dest[u+1] = row[turb[u+1]][col[u+1]];
+ 			dest[u+2] = row[turb[u+2]][col[u+2]];
+ 			dest[u+3] = row[turb[u+3]][col[u+3]];
++			if (qev_pixel_capture) {
++				Qev_PixelsWarpCopy(dest + u+0, row[turb[u+0]] + col[u+0]);
++				Qev_PixelsWarpCopy(dest + u+1, row[turb[u+1]] + col[u+1]);
++				Qev_PixelsWarpCopy(dest + u+2, row[turb[u+2]] + col[u+2]);
++				Qev_PixelsWarpCopy(dest + u+3, row[turb[u+3]] + col[u+3]);
++			}
+ 		}
+ 	}
++	Qev_PixelsWarpEnd();
+ }
+ 
+ 
+diff --git a/WinQuake/d_sprite.c b/WinQuake/d_sprite.c
+index 2f02ad2..74c462f 100644
+--- a/WinQuake/d_sprite.c
++++ b/WinQuake/d_sprite.c
+@@ -167,6 +167,7 @@ void D_SpriteDrawSpans (sspan_t *pspan)
+ 					{
+ 						*pz = izi >> 16;
+ 						*pdest = btemp;
++						QEV_PIXEL(pdest);
+ 					}
+ 				}
+ 
 diff --git a/WinQuake/host.c b/WinQuake/host.c
 index f72ddc1..2844ae3 100644
 --- a/WinQuake/host.c
@@ -101,6 +295,43 @@ index b5f0226..dac3671 100644
  #ifdef __EMSCRIPTEN__
  	// This is not ideal, but for now it is needed to ensure Emscripten's C
  	// compiler sets correct function signatures in object files.
+diff --git a/WinQuake/r_main.c b/WinQuake/r_main.c
+index 220f309..48c2188 100644
+--- a/WinQuake/r_main.c
++++ b/WinQuake/r_main.c
+@@ -540,6 +540,7 @@ void R_DrawEntitiesOnList (void)
+ 	for (i=0 ; i<cl_numvisedicts ; i++)
+ 	{
+ 		currententity = cl_visedicts[i];
++		Qev_DrawEntity(currententity);
+ 
+ 		if (currententity == &cl_entities[cl.viewentity])
+ 			continue;	// don't draw the player
+@@ -960,6 +961,8 @@ void R_RenderView_ (void)
+ 		r_time1 = Sys_FloatTime ();
+ 
+ 	R_SetupFrame ();
++	Qev_BeginView(r_drawpolys || r_drawculledpolys || r_drawflat.value ||
++		r_timegraph.value || r_speeds.value || r_dspeeds.value || r_aliasstats.value);
+ 
+ #ifdef PASSAGES
+ SetVisibilityByPassages ();
+@@ -1006,6 +1009,7 @@ SetVisibilityByPassages ();
+ 		dv_time1 = de_time2;
+ 	}
+ 
++	Qev_DrawEntity(NULL); /* The foreground weapon/effects erase any labels behind them. */
+ 	R_DrawViewModel ();
+ 
+ 	if (r_dspeeds.value)
+@@ -1021,6 +1025,7 @@ SetVisibilityByPassages ();
+ 
+ 	if (r_dowarp)
+ 		D_WarpScreen ();
++	Qev_EndView();
+ 
+ 	V_SetContentsColor (r_viewleaf->contents);
+ 
 diff --git a/WinQuake/sys_sdl.c b/WinQuake/sys_sdl.c
 index 22d75f4..7522030 100644
 --- a/WinQuake/sys_sdl.c

@@ -9,8 +9,9 @@ navigation, memory, rollout, and evaluation goals are not all implemented.
 - Qwasm: `f56b5e71e4be8effede29bae1785a5306dcc0249`.
 - Emscripten SDK: 3.1.74, SDK source `3d6d8ee910466516a53e665b86458faa81dae9ba`.
 - Kevala: npm `0.1.3`, locked in `package-lock.json`.
-- `engine/qwasm.patch` adds narrow hooks to six upstream files. The complete upstream
-  source is fetched under ignored `build/qwasm`, never copied into application modules.
+- `engine/qwasm.patch` adds input/lifecycle hooks to six upstream files and pixel-attribution
+  hooks to six software-renderer files. The complete upstream source is fetched under
+  ignored `build/qwasm`, never copied into application modules.
 - Engine artifacts go under `build/engine`. The build removes resource preloading and
   exports a modularized ES-module engine. It embeds **no PAKs or other game resources**.
 - The bridge is compiled without fast-math so its finite-number checks cannot be optimized
@@ -54,7 +55,8 @@ These exports now exist in the Qev build, not in unmodified Qwasm:
 
 | Export | Contract |
 | --- | --- |
-| `qev_snapshot()` | Version-2 JSON copy of ready/pause/epoch/tick/action state, assistance mode, and mode-specific player/entity observations |
+| `qev_snapshot()` | Version-3 JSON copy of ready/pause/epoch/tick/action state, assistance mode, and mode-specific player/entity observations |
+| `qev_screen_version()` | Required capability version `1` for renderer-visible-pixel observations; older engine builds fail with rebuild guidance |
 | `qev_assistance(enabled)` | Switch assisted (`1`) / raw-input (`0`) mode, stop input, and advance the observation epoch without restarting the map; persists across level loads |
 | `qev_probe(dx, dy, slot, generation, ticks)` | Assisted mode only: non-mutating swept-hull/support/hazard probe over 1–45 ticks, plus hypothetical endpoint line of sight; returns an error when assistance is off |
 | `qev_pause()` | Clear action/input leases, cancel remaining requested ticks, freeze world time |
@@ -84,13 +86,17 @@ fakes DOM events: both use Quake's ordinary user-command/physics path.
 
 ## Observation policy and guards
 
-Only local single-player sessions are supported. Both modes restrict object descriptions
-to recognizable stock monsters/pickups with models, a 90° horizontal / 60° vertical view-cone
-check, a 1,024-unit range cap, and a collision-ray line-of-sight test. At most three of each,
-nearest first, are returned. Enemy health and QuakeC enemy/goal fields are not serialized.
-**This is engine-labelled telemetry, not visual perception:** lighting/rendered-pixel
-visibility is not checked, and corpse filtering reads engine death/solid state. The formatter
-also excludes actors marked unobserved as a defensive check. No audio reaches the models.
+Only local single-player sessions are supported. Both modes use engine labels for stock
+monsters/pickups; corpse filtering reads engine death/solid state. Enemy health and QuakeC
+enemy/goal fields are not serialized. At most three enemies and three pickups are returned.
+No audio or RGB images reach the text-only decision models.
+
+**Assisted sensing** uses a 90° horizontal / 60° vertical view-cone check, a 1,024-unit range
+cap, and a collision-ray line-of-sight test, returning nearest first. Lighting and actual
+rendered pixels are not checked on that path. **Off sensing** instead requires nonzero
+visible pixel coverage in the rendered viewport and sorts by that coverage, not distance.
+It does not reuse the assisted range/cone/ray tests. Neither path is human-equivalent
+perception: automatic engine classification remains a significant concession.
 
 Health/ammo/armor and silver/gold key inventory are HUD facts. In assisted mode, snapshots
 also expose precise positions, bearings, and actor IDs/generations. The controller uses GPS
@@ -98,10 +104,11 @@ memory and privileged geometry queries in all walking directions, including off 
 hypothetical destination-cover tests and door/key metadata. Actor filtering does not make
 those geometry queries human-equivalent or restrict them to visibly known terrain.
 
-In assistance-off mode the native snapshot removes coordinates, yaw/pitch, ground/water
-flags, precise ranges/bearings, and stable actor IDs. Contacts have only a kind, coarse
-left/ahead/right, above/level/below, nearby/medium/far, and the visibility flag. There is no
-fallback to precise data when a coarse field is missing. Native probe calls fail in this mode.
+In assistance-off mode the native snapshot removes world coordinates, yaw/pitch, ground/water
+flags, ranges/bearings and stable actor IDs. The previous engine-derived nearby/medium/far bins
+are gone. Contacts contain a kind, visibility flag and visible-pixel measurements described
+below. Unavailable or malformed screen data stays unknown; there is no geometry-based
+fallback. Native probe calls fail in this mode.
 
 Both modes require exact epoch/tick for inspection, or an active matching session/epoch and
 an observation at most 60 ticks old for live input. Finite numeric bounds and action durations
@@ -132,15 +139,18 @@ telemetry** is an explicit experiment, not a claim of screen-only or human-equiv
 relative primitives: forward/back/left/right; turn left/right; look up/down; fire; each of
 the four movements with fire; and release all inputs. There is no movement/cover look-ahead
 query, resource/loop filter, nearest-target macro, tactical shortlist, or post-application probe.
-The visibility ray used to filter object descriptions remains part of the sensing concession.
-Health/ammo, enemies and pickups do not change which inputs are offered or their order.
+Engine labels/corpse filtering remain part of the sensing concession; visible-pixel coverage,
+not an extra visibility ray, determines which objects are described. Health/ammo, screen cues,
+enemies and pickups do not change which inputs are offered or their order.
 
 Movement is 200 units/s, turn primitives 60°/s, look primitives 45°/s. The native boundary
 caps turn/look rates at 180°/s and uses the same 12-tick inspection / 45-tick live lease limits.
 The model must choose its own turns and shots; no entity reference reaches raw input.
-Unassisted memory records only the last applied input and observed HUD health/ammo changes,
-not displacement, cell visits, contact identity or waypoints. Both entering and leaving this
-mode discard old navigation/memory. Priorities still change the actual prompt in both modes.
+Unassisted outcome memory records the last applied input and HUD health/ammo changes,
+not displacement, cell visits, contact identity or waypoints. A separate short-lived visual
+memory compares image extents, without stable actor IDs or GPS (below). Both entering and
+leaving this mode discard old navigation/memory. Priorities still change the actual prompt
+in both modes.
 
 Changing the selector stops Auto/Step, cancels pending respawn continuation, and invalidates
 old model responses. The native setter clears leases and advances the observation epoch,
@@ -151,11 +161,56 @@ Weights are not reloaded just to switch assistance. Every record/card/export ide
 mode and retains the exact original request; switching cannot rewrite old decisions.
 
 Off removes aids but also lacks a human's scene understanding: walls/floor are not described,
-there are no screenshots/audio, and engine object classification remains a concession.
+the decision models receive text rather than screenshots/audio, and engine object
+classification remains a concession.
 There are no jump/swim/weapon-selection primitives in this first experiment. Stop, focus-loss
 handling, death recovery and bounded leases remain. Step and slow playback still pause/slow
 the world; use **Start at 1×** for real-time experiments. This is a package ablation with a
 different observation/action interface, not an isolated measurement of any one assistance.
+
+### Visible-screen size and depth cues
+
+`engine/qev_pixels.c` is a standalone 2D tag-mask reducer. Renderer hooks tag only ordinary
+opaque fragment writes that win the existing rendering tests; surface spans cover brush
+pickups as well as alias-model monsters/items. Unknown objects, the foreground weapon and
+particles overwrite labels behind them. Transparent sprite texels do not. Water warp copies
+tags using the **same source-pixel mapping** as the image. The reducer receives no world
+coordinates, camera pose, Z values, projected 3D bounding boxes or collision queries.
+Internal tags associate visible pixels with the explicitly allowed engine labels; they are
+never exposed as actor IDs or used for temporal matching.
+
+For each retained object the native snapshot supplies normalized visible bounds, final pixel
+count, whether a labelled pixel occupies the exact viewport-center aim point, edge clipping,
+and the number of currently visible objects of that kind. `screen` records the source,
+render-frame number, simulation tick, viewport and image-warp status. Measurements are from
+the 3D viewport, not the HUD. Both modes capture frames so switching Off while stopped reads
+the existing image without advancing physics, RNG, animation or game time. Stale/incomplete
+frames, covered views (console, center text, scoreboard, pause/loading/dialog), and unsupported
+debug/stereo rendering are unavailable, rather than replaced by geometric estimates.
+
+`src/screen.js` validates/copies these measurements and derives screen-relative direction,
+center `(x,y)%` from the top-left, and apparent size. The prompt uses **visible height %**
+plus tiny/small/medium/large to stay compact; width, exact bounds, counts and cue evidence
+remain in the record's `visual`/outcome `screenCues` payload. `aim on/off` is image overlap,
+**not a hit prediction, line-of-fire test or firing gate**. No controller aims or fires on
+behalf of the model, and all 14 raw inputs remain available regardless of the cues.
+
+`ScreenMemory` holds at most eight permitted image samples over 45 game ticks, normally at
+least four ticks apart. Growing/shrinking requires three consistent images spanning at least
+12 ticks, comparable widths/heights and silhouette fill, small image displacement, and a
+unique visible object of that kind. Duplicates, loss, clipping, tiny silhouettes, large detected
+silhouette changes, warped views, gaps, viewport/epoch changes and invalidation withhold or reset the
+trend. Even a brief observed disappearance between regular samples breaks continuity.
+Evidence contains only frame/tick, visible bounds and pixel counts; historical requests and
+cue evidence are never recomputed. This is short-lived image matching, not GPS or identity
+tracking through walls.
+
+**Depth remains uncertain.** Larger/growing images can suggest nearer/approaching objects,
+but object size, animation, occlusion, camera movement and zoom can also change them. A
+partially visible object has no known full extent or occlusion percentage. Darkness and
+human recognizability are not independently assessed; labels come from the engine, not a
+learned RGB detector. Walls, floor, hazards and unseen space are still unknown. No vision
+weights are downloaded and this does not turn Kev/Laya into image-input models.
 
 ## Level selection, layout, and death recovery
 
@@ -466,7 +521,7 @@ fail closed while preserving the response. Real-time Pause, reset, model change,
 completion, and human takeover discard late results; native session tokens also prevent
 old commands from crossing a pause/resume boundary in the same map.
 
-History is bounded to 50 records and can be exported as version-6 JSON. The top level contains
+History is bounded to 50 records and can be exported as version-7 JSON. The top level contains
 the current assistance policy, `priorityOrder` and `objectives`; each record separately retains
 its own mode, order, objective text, exact request, and decision format. Current exploration
 is null when Off, as are raw records' navigation/geometry fields. Historical assisted records
@@ -527,7 +582,7 @@ failures, same-model retries, ignored late progress, and model changes during pe
 inference. With `--model`, dropdown selection loads real Laya and leaves the world stopped.
 `scripts/browser-priorities.mjs` checks button/keyboard reordering and native pointer drag/drop,
 focus/boundary controls, current versus historical request text, stale-reply rejection in
-inspection/Auto, interrupted Step execution, map-change persistence, and version-6 exports.
+inspection/Auto, interrupted Step execution, map-change persistence, and version-7 exports.
 Additional checks cover configuration before engine startup, page-reset defaults, and
 priority retention across model/backend changes.
 Desktop/tablet/phone checks verify the new columns and usable touch controls. A real Laya
@@ -554,15 +609,33 @@ functional encounter, not a controlled published gameplay benchmark.
 APIs while Off, raw numeric/lease bounds, actual angular rates without target lock, real
 ammunition spent without a visible target, and acceptance of a route vetoed by assisted
 geometry. A throwing probe stub covers raw scoring, application and outcome collection.
-It also checks Step/Auto cancellation on mode switches, historical-mode labelling, version-6
+It also checks Step/Auto cancellation on mode switches, historical-mode labelling, version-7
 exports, and assistance persistence across map loading and death; model-loader checks cover
 backend/model changes. Node tests poison privileged fields/probes/navigation to prove the
 raw formatter avoids them, and verify the invariant 14-input set regardless of tactical state.
 
+Visible-pixel reducer tests compile the standalone C module with AddressSanitizer and
+UndefinedBehaviorSanitizer (explicitly skipped if no C compiler is installed). They check
+final coverage rather than overdraw, partial/full occlusion, holes at the aim point,
+viewport/HUD clipping, invalid inputs, reset, and exact warp remapping. JS tests poison
+world/actor/range fields, cover ambiguous and stale image matching, bound memory, and retain
+historical state/evidence. `scripts/browser-screen.mjs` checks real rendered extents, a one-tick
+FOV change, brush pickups, draw-disabled actors versus still-visible privileged LOS telemetry,
+and covered/debug-frame abstention. Test-only console settings are restored before the
+normal gameplay checks; no render-control/cheat export is added to the engine API.
+
+A separately labelled synthetic six-object request stresses Laya's 512-token input window.
+The first verbose format hit that limit, so the model text uses height (full 2D extents remain
+inspectable), compact timing and non-duplicated recency wording. The revised stress case
+used 489 input tokens; a real 12-second Off trial used 414–435, without truncation warnings.
+This checks input size, not depth accuracy or competent play. The real-mode trials still preserve model choices,
+including repeated firing despite off-center targets; richer sensing is not proof of better
+control or survival.
+
 With `--assistance`, the muted browser harness loads real Laya and runs one fresh 12-second
 map-6/Hard episode per mode at 1×, without auto-respawn. Full inputs/responses/outcomes go to
 ignored `build/assistance-trials.json`; screenshots are saved per mode. The first illustrative
-run ended alive at 100 health in both modes, with neither complete. On applied 42 decisions
+**pre-pixel-cue** run ended alive at 100 health in both modes, with neither complete. On applied 42 decisions
 mixing movement/fire/pickups and ended with 12 shells; Off applied 82 decisions, all stationary
 fire, and ended with 1 shell (both started with 25). Maximum reported input tokens were
 454/393, with no truncation warnings. These are **single, non-matched-RNG trials with different

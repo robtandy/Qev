@@ -319,7 +319,7 @@ for (const id of ["map", "difficulty"]) $(id).addEventListener("change", () => g
 $("speed").addEventListener("change", () => guard(async () => engine?.speed(Number($("speed").value))));
 $("export").addEventListener("click", () => {
   const priorityOrder = currentPriorityOrder(), assistance = currentAssistance();
-  const url = URL.createObjectURL(new Blob([json({ version: 6, assistance, decisionFormat: agent.decisionFormat, respawns: respawner?.count || 0, activeLevel: snapshot?.ready ? { map: snapshot.map, difficulty: snapshot.difficulty } : null, observation: snapshot, engineLog: engineLines.slice(), objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), exploration: assistance === "assisted" ? agent.navigation.inspect() : null, observationPolicy: ASSISTANCE[assistance].observationPolicy, controller: ASSISTANCE[assistance].controller, records: agent.history })], { type: "application/json" }));
+  const url = URL.createObjectURL(new Blob([json({ version: 7, assistance, decisionFormat: agent.decisionFormat, respawns: respawner?.count || 0, activeLevel: snapshot?.ready ? { map: snapshot.map, difficulty: snapshot.difficulty } : null, observation: snapshot, engineLog: engineLines.slice(), objective: PRIMARY_OBJECTIVE, priorityOrder, objectives: objectivesFor(priorityOrder), exploration: assistance === "assisted" ? agent.navigation.inspect() : null, observationPolicy: ASSISTANCE[assistance].observationPolicy, controller: ASSISTANCE[assistance].controller, records: agent.history })], { type: "application/json" }));
   const link = document.createElement("a"); link.href = url; link.download = "qev-trace.json"; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });

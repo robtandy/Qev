@@ -3,6 +3,8 @@
  * See COPYING and README.md for license, source, and modification notices.
  */
 #include "quakedef.h"
+#include "d_local.h"
+#include <stdint.h>
 #include <emscripten/emscripten.h>
 #include <SDL.h>
 #include <ctype.h>
@@ -25,6 +27,15 @@ static float move_x = 0, move_y = 0, aim_yaw = 0, aim_pitch = 0, speed_scale = 1
 static double last_wall = 0, accumulator = 0, lease_deadline = 0;
 static char json[32768];
 static size_t used;
+static int view_tick = -1, view_frame = 0;
+static const char *view_reason = "No rendered frame";
+static const char *view_kinds[MAX_EDICTS];
+static unsigned char view_known[MAX_EDICTS], view_threats[MAX_EDICTS];
+/* UI overlays are not attributed by the 3D raster hooks; fail closed while covered. */
+extern float scr_centertime_off;
+extern qboolean sb_showscores, scr_drawloading, scr_drawdialog;
+extern cvar_t lcd_x;
+_Static_assert(MAX_EDICTS <= QEV_PIXEL_TAGS, "Pixel tag capacity must cover client entities");
 
 static int ready(void) {
     return host_initialized && sv.active && svs.maxclients == 1 &&
@@ -102,6 +113,46 @@ static const char *entity_kind(edict_t *e, int *threat) {
     if (!strncmp(name, "weapon_", 7)) return name;
     return NULL;
 }
+/* Pixel attribution is recorded in BOTH modes so switching Off while stopped can
+ * inspect the already displayed frame without advancing physics, RNG or animation.
+ * Engine identity/classification is the explicit concession; measurements below
+ * consume only the final visible tag mask, never positions or Z-buffer values. */
+EMSCRIPTEN_KEEPALIVE int qev_screen_version(void) { return 1; }
+void Qev_BeginView(int unsupported) {
+    Qev_PixelsReset(); view_tick = -1;
+    memset(view_known, 0, sizeof(view_known));
+    memset(view_kinds, 0, sizeof(view_kinds));
+    if (!ready() || cl.intermission) { view_reason = "No active player view"; return; }
+    if (unsupported || lcd_x.value) { view_reason = "Unsupported debug render"; return; }
+    if (!Qev_PixelsBegin(d_viewbuffer, screenwidth, r_dowarp ? WARP_WIDTH : vid.width,
+        r_dowarp ? WARP_HEIGHT : vid.height, r_refdef.vrect.x, r_refdef.vrect.y,
+        r_refdef.vrect.width, r_refdef.vrect.height)) { view_reason = "Invalid pixel buffer"; return; }
+    view_reason = NULL;
+}
+void Qev_DrawEntity(entity_t *entity) {
+    uintptr_t address = (uintptr_t)entity, base = (uintptr_t)cl_entities;
+    int slot, threat;
+    edict_t *e;
+    Qev_PixelsTag(0); /* World, weapon, effects and unknown labels still occlude. */
+    if (!qev_pixel_capture || address < base || address - base >= sizeof(cl_entities) ||
+        (address - base) % sizeof(*cl_entities)) return;
+    slot = (int)((address - base) / sizeof(*cl_entities));
+    if (slot <= 1 || slot >= sv.num_edicts) return;
+    if (!view_known[slot]) {
+        view_known[slot] = 1; e = EDICT_NUM(slot);
+        /* Do not mislabel an interpolated old model after a server slot is reused. */
+        if (!e->free && entity->model && !strcmp(entity->model->name, pr_strings + e->v.model)) {
+            view_kinds[slot] = entity_kind(e, &threat); view_threats[slot] = !!threat;
+        }
+    }
+    if (view_kinds[slot]) Qev_PixelsTag(slot);
+}
+void Qev_EndView(void) {
+    if (!qev_pixel_capture) return;
+    Qev_PixelsEnd();
+    if (Qev_PixelsView()->valid) { view_tick = tick + 1; view_frame++; }
+    else view_reason = "Incomplete pixel frame";
+}
 static edict_t *valid_target(int slot, int generation) {
     edict_t *e;
     int threat;
@@ -125,6 +176,7 @@ void Qev_WorldChanged(void) {
     epoch++; control_session++; tick = 0; paused = owned = booting = 1;
     remaining = 0; accumulator = 0; stop_reason = NULL;
     memset(generations, 0, sizeof(generations));
+    Qev_PixelsReset(); view_tick = -1; view_reason = "World changed; awaiting rendered frame";
     clear_action(); audio_pause(1); /* No old-world audio during loading/bootstrap. */
 }
 void Qev_EntityFreed(edict_t *e) {
@@ -241,24 +293,52 @@ static void seen_json(seen_t *list, int count) {
         VectorSubtract(pos, eye, d);
         if (i) append(",");
         append("{");
-        if (assistance) append("\"slot\":%d,\"generation\":%d,", slot, generations[slot]);
+        append("\"slot\":%d,\"generation\":%d,", slot, generations[slot]);
         append("\"kind\":"); quoted(list[i].kind);
-        if (assistance) {
-            append(",\"position\":"); vector_json(pos);
-            append(",\"distance\":%.2f,\"bearingRight\":%.2f", list[i].distance,
-                -angle_delta(atan2f(d[1], d[0])*180/M_PI, cl.viewangles[YAW]));
-        } else {
-            /* A semantic sensing concession, not image perception. Do not expose IDs,
-               coordinates or precise angles/ranges in the assistance-off snapshot. */
-            float yaw = angle_delta(atan2f(d[1], d[0])*180/M_PI, cl.viewangles[YAW]);
-            float pitch = -atan2f(d[2], sqrtf(d[0]*d[0] + d[1]*d[1]))*180/M_PI - cl.viewangles[PITCH];
-            append(",\"bearing\":"); quoted(yaw > 5 ? "left" : yaw < -5 ? "right" : "ahead");
-            append(",\"elevation\":"); quoted(pitch < -5 ? "above" : pitch > 5 ? "below" : "level");
-            append(",\"range\":"); quoted(list[i].distance < 128 ? "nearby" : list[i].distance < 512 ? "medium range" : "far away");
-        }
+        append(",\"position\":"); vector_json(pos);
+        append(",\"distance\":%.2f,\"bearingRight\":%.2f", list[i].distance,
+            -angle_delta(atan2f(d[1], d[0])*180/M_PI, cl.viewangles[YAW]));
         append(",\"visible\":true}");
     }
     append("]");
+}
+static void screen_objects_json(const qev_pixel_view_t *view, int threats, int available) {
+    int selected[QEV_MAX_SEEN], count = 0, i, j, pos;
+    /* Rank only by actual visible pixel count, not by hidden world distance. */
+    if (available) for (i = 2; i < MAX_EDICTS; i++) {
+        if (!view_kinds[i] || view_threats[i] != threats || !view->objects[i].count) continue;
+        pos = 0;
+        while (pos < count && view->objects[selected[pos]].count >= view->objects[i].count) pos++;
+        if (pos >= QEV_MAX_SEEN) continue;
+        if (count < QEV_MAX_SEEN) count++;
+        for (j = count - 1; j > pos; j--) selected[j] = selected[j - 1];
+        selected[pos] = i;
+    }
+    append("[");
+    for (i = 0; i < count; i++) {
+        int slot = selected[i], same_kind = 0;
+        const qev_pixel_object_t *o = &view->objects[slot];
+        for (j = 2; j < MAX_EDICTS; j++) if (view_kinds[j] && view->objects[j].count &&
+            !strcmp(view_kinds[j], view_kinds[slot])) same_kind++;
+        if (i) append(",");
+        append("{\"kind\":"); quoted(view_kinds[slot]);
+        append(",\"visible\":true,\"screen\":{\"bounds\":[%.4f,%.4f,%.4f,%.4f],\"pixels\":%d,\"aimOverlap\":%s,\"clipped\":%s,\"sameKindCount\":%d}}",
+            (double)o->left/view->width, (double)o->top/view->height, (double)o->right/view->width,
+            (double)o->bottom/view->height, o->count, o->at_aim ? "true" : "false", o->clipped ? "true" : "false", same_kind);
+    }
+    append("]");
+}
+static void screen_json(void) {
+    const qev_pixel_view_t *view = Qev_PixelsView();
+    const char *reason = view_reason;
+    int available = view->valid && view_tick == tick && key_dest == key_game && !cl.intermission &&
+        scr_con_current <= 0 && scr_centertime_off <= 0 && !sb_showscores && !cl.paused && !scr_drawloading && !scr_drawdialog;
+    if (!available && !reason) reason = view_tick != tick ? "Awaiting current rendered frame" : "Player view covered";
+    append(",\"screen\":{\"source\":\"renderer-visible-pixels\",\"available\":%s,\"frame\":%d,\"tick\":%d,\"distorted\":%s,\"viewport\":[%d,%d,%d,%d],\"reason\":",
+        available ? "true" : "false", view_frame, view_tick, view->distorted ? "true" : "false", view->x, view->y, view->width, view->height);
+    if (available) append("null"); else quoted(reason ? reason : "No rendered frame");
+    append("},\"enemies\":"); screen_objects_json(view, 1, available);
+    append(",\"pickups\":"); screen_objects_json(view, 0, available);
 }
 EMSCRIPTEN_KEEPALIVE const char *qev_snapshot(void) {
     seen_t enemies[QEV_MAX_SEEN], pickups[QEV_MAX_SEEN];
@@ -266,7 +346,7 @@ EMSCRIPTEN_KEEPALIVE const char *qev_snapshot(void) {
     const char *kind;
     vec3_t d, pos;
     used = 0;
-    append("{\"version\":2,\"epoch\":%d,\"tick\":%d,\"ready\":%s,\"paused\":%s,\"remaining\":%d,\"owned\":%s",
+    append("{\"version\":3,\"epoch\":%d,\"tick\":%d,\"ready\":%s,\"paused\":%s,\"remaining\":%d,\"owned\":%s",
         epoch, tick, ready() ? "true" : "false", paused ? "true" : "false", remaining, owned ? "true" : "false");
     append(",\"assistance\":"); quoted(assistance ? "assisted" : "unassisted");
     append(",\"controlSession\":%d,\"actionSerial\":%d,\"actionTicks\":%d,\"actionTicksLeft\":%d,\"stopReason\":", control_session, action_serial, action_ticks, lease);
@@ -285,6 +365,7 @@ EMSCRIPTEN_KEEPALIVE const char *qev_snapshot(void) {
             cl.viewangles[YAW], cl.viewangles[PITCH], cl.onground ? "true" : "false", cl.inwater ? "true" : "false");
     }
     append(",\"silverKey\":%s,\"goldKey\":%s}", cl.items & IT_KEY1 ? "true" : "false", cl.items & IT_KEY2 ? "true" : "false");
+    if (!assistance) { screen_json(); append("}"); return json; }
     for (i = 2; i < sv.num_edicts && i < MAX_EDICTS; i++) {
         edict_t *e = EDICT_NUM(i);
         if (e->free || !e->v.modelindex) continue;

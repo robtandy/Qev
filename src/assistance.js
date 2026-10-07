@@ -9,9 +9,9 @@ export const ASSISTANCE = Object.freeze({
   }),
   unassisted: Object.freeze({
     label: "Assistance off",
-    observationPolicy: "HUD and coarse engine-labelled visible-object descriptions only, not pixels/audio. No coordinates, actor IDs, geometry probes, or GPS memory. Visibility is approximate, not guaranteed human perception.",
+    observationPolicy: "HUD plus renderer-labelled visible pixels: 2D extents, apparent size, aim-center overlap and cautious short-lived image-size trends. Engine labels/corpse filtering remain a concession; this is not RGB-only vision or human-equivalent perception. No world coordinates, actor IDs, engine range bins, depth-buffer distances, geometry probes or GPS memory. Visible extent is not full extent; metric depth, occlusion fraction and unseen space are unknown.",
     controller: "Fixed relative movement/look/fire inputs, no probes, target tracking, aim-gated fire, hazard vetoes, navigation memory or tactical shortlisting. 200 units/s, 60 deg/s turn, 45 deg/s look; 60 Hz, bounded input leases. No jump/swim/weapon-selection inputs in this experiment.",
-    note: "Off: HUD + coarse visible-object labels, not pixels/audio. No probes, GPS, aim or tactical filtering; walls/hazards are unknown.",
+    note: "Off: visible-pixel size/aim cues + engine labels, not RGB-only vision. Depth uncertain; no probes, GPS, auto-aim or tactical filtering.",
   }),
 });
 export function validateAssistance(value) {

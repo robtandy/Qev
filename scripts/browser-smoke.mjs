@@ -11,6 +11,7 @@ import { beginAudioChecks, checkAudioPlayback } from "./browser-audio.mjs";
 import { checkModelSelection } from "./browser-model-selection.mjs";
 import { checkPriorities } from "./browser-priorities.mjs";
 import { checkAssistance, runAssistanceTrials } from "./browser-assistance.mjs";
+import { checkScreen, checkScreenModel } from "./browser-screen.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, timeout = 30_000) {
@@ -284,6 +285,7 @@ try {
     return qev.engine.snapshot().player.grounded && qev.engine.snapshot().paused;
   `);
   await checkAudioPlayback({ evaluate, check, call, until });
+  await checkScreen({ evaluate, check, until, pressKeys });
   await checkAssistance({ evaluate, check, until, bindKillForTest, killPlayerViaConsole });
   await evaluate(`
     window.originalModel = qev.agent.getModel;
@@ -683,6 +685,8 @@ try {
         document.querySelector('#auto').getAttribute('aria-pressed')==='false';
     `);
     console.log("Live model:", await evaluate("({backend:qev.model.info.backend,arch:qev.model.info.arch})"));
+    const screenBudget = await checkScreenModel({ evaluate, check });
+    await writeFile(resolve(root, 'build/screen-token-budget.json'), JSON.stringify(screenBudget, null, 2));
     await evaluate("document.querySelector('[data-priority=get-supplies] [data-move=up]').click();document.querySelector('#step').click()");
     await until(() => evaluate("qev.agent.current?.status === 'executed' && qev.engine.snapshot().paused"), 180_000);
     await check("one UI Step sends the reordered priorities to real Kevala, executes twelve ticks, and stops", `

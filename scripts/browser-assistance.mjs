@@ -21,12 +21,13 @@ export async function checkAssistance({ evaluate, check, until, bindKillForTest,
     await check("switching off advances the input epoch without resetting the level and redacts precise native observations", `
       const s=qev.engine.snapshot(), before=assistanceTest.before;
       const hidden=['position','yaw','pitch','grounded','inWater','slot','generation','distance','bearingRight'];
-      return s.version===2 && s.assistance==='unassisted' && s.epoch!==before.epoch && s.tick===before.tick &&
+      return s.version===3 && s.assistance==='unassisted' && s.epoch!==before.epoch && s.tick===before.tick &&
         s.map===before.map && s.difficulty===before.difficulty && s.player.health===before.player.health && s.player.ammo===before.player.ammo &&
         s.paused && !s.remaining && s.actionTicksLeft===0 && qev.playMode==='inspection' &&
         [s.player,...s.enemies,...s.pickups].every(value=>hidden.every(key=>!(key in value))) &&
-        s.enemies.length>0 && [...s.enemies,...s.pickups].every(e=>e.visible && e.kind && e.bearing && e.elevation && e.range) &&
-        document.querySelector('#assistance-note').textContent.includes('not pixels/audio');
+        s.screen.available && s.screen.tick===s.tick && s.enemies.length>0 &&
+        [...s.enemies,...s.pickups].every(e=>e.visible && e.kind && e.screen.pixels>0 && e.screen.bounds.length===4 && !('range' in e)) &&
+        document.querySelector('#assistance-note').textContent.includes('not RGB-only vision');
     `);
     await check("native off mode rejects probes, assisted actions, invalid modes and malformed raw input", `
       const s=qev.engine.snapshot(), m=qev.engine.module;
@@ -101,7 +102,7 @@ export async function checkAssistance({ evaluate, check, until, bindKillForTest,
       };qev.agent.invalidate()`);
     await until(() => evaluate("!document.querySelector('#step').disabled"));
     await evaluate("document.querySelector('#step').click();assistanceTest.records.push(qev.agent.current);assistanceTest.original=JSON.stringify(qev.agent.current.requests)");
-    await check("off-mode UI sends all 14 fixed inputs with coarse observations and no GPS/geometry facts", `
+    await check("off-mode UI sends all 14 fixed inputs with visible-pixel cues and no GPS/geometry facts", `
       const r=assistanceTest.records[0];
       return r.assistance==='unassisted' && r.eligible.length===14 && r.eligible.every(c=>c.params.input==='relative' && c.allowed && !c.geometry && !c.route) &&
         r.navigation===null && r.steering===null && !('position' in r.before.player) &&
@@ -167,10 +168,10 @@ export async function checkAssistance({ evaluate, check, until, bindKillForTest,
       HTMLAnchorElement.prototype.click=function(){};
       try{document.querySelector('#export').click();}finally{URL.createObjectURL=create;HTMLAnchorElement.prototype.click=click;}
     })()`);
-    await check("version-6 traces label each experiment mode and omit current GPS memory when off", `
+    await check("version-7 traces label each experiment mode and omit current GPS memory when off", `
       const trace=await assistanceTest.exported;
-      return trace.version===6 && trace.assistance==='unassisted' && trace.exploration===null && !('position' in trace.observation.player) &&
-        trace.observationPolicy.includes('not pixels/audio') && trace.records.some(r=>r.assistance==='assisted') &&
+      return trace.version===7 && trace.assistance==='unassisted' && trace.exploration===null && !('position' in trace.observation.player) &&
+        trace.observationPolicy.includes('not RGB-only vision') && trace.records.some(r=>r.assistance==='assisted') &&
         trace.records.filter(r=>r.assistance==='unassisted').every(r=>!r.navigation && !('position' in r.before.player));
     `);
     await fresh();

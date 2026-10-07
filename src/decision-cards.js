@@ -43,6 +43,7 @@ export function decisionOutcome(record) {
     observedTicksSinceApply: after?.epoch === before.epoch ? after.tick - before.tick : null,
     execution: record.execution, selectedAction: record.eligible[record.selectedIndex]?.id,
     steeringFrame: record.steering, explorationBefore: record.navigation, explorationAfter: record.navigationAfter,
+    screenCues: record.visual,
     appliedGeometry: record.appliedGeometry, observation: record.before, appliedAt: record.appliedAt,
     after: after || "No final outcome recorded. Accepting a decision does not imply it has executed.",
     error: record.error,
