@@ -216,11 +216,11 @@ weights are downloaded and this does not turn Kev/Laya into image-input models.
 
 The default is `lq_e0m6` on Hard (`skill 2`), in both the engine API and initial selector. Compact top controls offer Easy/Normal/Hard/Nightmare along
 with the map. Changing either selector immediately loads a fresh episode with both selected
-values and leaves it stopped; there is no separate restart/apply button. Selection stops
+values and leaves it stopped; there is no separate apply/confirmation step. Selection stops
 continuous control and invalidates outstanding decisions before the engine load. Selectors
 are disabled during loading to prevent overlapping map commands. Model downloads remain explicit.
 
-The playback buttons are **Start**, **Stop**, and **Step** only. Start is one-way and disabled
+The playback buttons are **Start**, **Stop**, **Step**, and **Reset**. Start is one-way and disabled
 while running or loading a model. The model selector initially says **Choose a decision
 model**, with neither Kev nor Laya selected. A steady accent highlight marks the required
 choice from first paint, with an associated hint explaining that selection downloads the
@@ -237,8 +237,9 @@ Stop freezes the simulation without resetting the map. `src/stepper.js` owns
 a single-click frozen-score/bounded-action job. It can reuse only a still-fresh inspection
 score; otherwise it gets a new observation and choice, executes at most 12 ticks, and stops.
 Its cancel operation invalidates the agent generation and releases inputs, so Stop during
-inference or execution cannot be undone by a late reply. Map/model/assistance changes and tab/focus loss
-use the same cancellation path. Busy checks prevent concurrent step or start jobs. The old
+inference or execution cannot be undone by a late reply. Reset, map/model/assistance changes,
+opening the help modal, and tab/focus loss use the same cancellation path. Busy checks prevent
+concurrent step or start jobs. The old
 frozen Score and single-frame engine methods remain diagnostic APIs, not UI buttons. The game gets the larger left column and all the available
 viewport height after the compact controls and credits footer. A ResizeObserver recomputes
 its fitted height when controls wrap or loading UI changes, preserving the renderer's 4:3
@@ -248,6 +249,29 @@ removed. A compact **Thanks to:** footer links Kev, Laya, Kevala, Qwasm, and Lib
 Two compact columns sit beside the game: **Priorities** (210 px) and **Decisions** (270 px,
 reduced from 340 px). Both match the game height, with bounded list scrolling. Tablets put
 the columns side by side beneath the game; phones stack them with larger reorder buttons.
+
+**Reset** uses the same single-flight level-loading path as map changes, but takes the actual
+active map and difficulty from the engine rather than trusting possibly stale selectors.
+It is available without a model, during inference/stepping/Auto, and for a dead/completed
+ready level; it disables while a game load/respawn is in progress. Reset stops input and
+cancels pending continuation before loading, never resumes Auto, and does not unlock audio
+or reload weights. The model/backend, assistance, priority order and speed stay unchanged.
+Navigation/outcome memory starts fresh; historical cards and their requests remain intact.
+A late old-worker response is discarded, and Start/Step stay disabled until it settles.
+The settings selectors are synchronized to the successfully loaded level.
+
+The circled **?** beside Assistance works before the engine or a model is ready.
+`src/assistance-help.js` shows a non-modal preview on mouse hover or keyboard focus; it does
+not steal focus, pause play, or change settings. The panel sits outside the dropdown and
+remains reachable across the field, with bounded height and scrolling. Click, tap, Enter,
+Space or **Keep open** opens the same explanation in a native modal dialog and deliberately
+stops play. Escape, close buttons and a backdrop click dismiss it; focus returns to the
+question mark and the preview does not immediately reopen. Closing never resumes play,
+and game shortcuts do not operate behind the modal. Reopening starts at the introductory
+paragraph. Both presentations use a single authored copy, without duplicate element IDs.
+The copy explicitly says **assistance is OK here because the experiment tests decisions,
+not mechanical execution**, while disclosing that On also supplies engine information and
+shortlists actions, Off retains engine labels, and comparisons must hold the setting fixed.
 
 `src/decision-cards.js` displays only the latest five records, newest first. Cards are keyed
 by decision ID: adding one at the top preserves older expanded details, payload scroll, and
@@ -572,7 +596,7 @@ settings, default map 6 on Hard, larger above-the-fold game layout, and native z
 recovery in inspection/Auto modes. Card checks verify newest-first five-record eviction,
 binary verdicts, no verdict during inference, untouched payloads, HTML-injection safety,
 per-card Copy, and preservation of expansion, focus, and scrolling when new cards arrive.
-Playback checks verify exactly three buttons, one-click Step with real Laya, Stop during
+Playback checks verify all four buttons, one-click Step with real Laya, Stop during
 both scoring and execution, and immediate stopped map/difficulty changes—including during
 real-time inference and a pending Step. Model-selection checks verify the initial unfocused
 highlight, direct loading on choice, backend reloads, absence of a Load button/dialog and
@@ -590,6 +614,18 @@ Step also sends a reordered priority list before the live trials return to defau
 Test-only console key binding sets health to zero: LibreQuake's
 `kill` command itself restarts immediately inside QuakeC and would bypass the observed-death
 path being tested. No diagnostic kill export is added to the production bridge.
+
+`scripts/browser-help.mjs` exercises real pointer hover, preview persistence/dismissal,
+click, Enter/Space, modal focus containment/restoration, Escape, backdrop dismissal, and a
+320px touch viewport with scrollable content. It verifies that help works before assets or
+models load, does not cover the selector, and remains usable after blur/outside dismissal.
+`scripts/browser-reset.mjs` uses the real engine with delayed inference and level loading to
+check stopped resets without a model, restored loadout, retained settings/history, duplicate
+clicks, stale selectors, Step scoring/execution and Auto races, and manual recovery from
+death. It also verifies that hovering help during Auto is read-only, whereas deliberately
+opening the modal cancels a pending Step and blocks game shortcuts. With `--model`, a Reset
+retains the actual loaded Laya instance and reordered priorities. All artifacts stay in
+ignored `build/`.
 
 All Chromium tests launch with **`--mute-audio`**, verified through CDP before any checks,
 so test playback is silent on the host. This does not disable normal gameplay sound.

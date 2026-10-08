@@ -12,6 +12,8 @@ import { checkModelSelection } from "./browser-model-selection.mjs";
 import { checkPriorities } from "./browser-priorities.mjs";
 import { checkAssistance, runAssistanceTrials } from "./browser-assistance.mjs";
 import { checkScreen, checkScreenModel } from "./browser-screen.mjs";
+import { checkHelp } from "./browser-help.mjs";
+import { checkReset } from "./browser-reset.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, timeout = 30_000) {
@@ -77,6 +79,10 @@ try {
   await navigate("/");
   await until(() => evaluate("!document.querySelector('#retry-demo').hidden"));
   await checkDemoOnly("failed loading does not expose a manual-import fallback");
+  await checkHelp({ evaluate, check, call, until, onScreenshot: async name => {
+    const image = await call('Page.captureScreenshot', { format: 'png' });
+    await writeFile(resolve(root, `build/qev-assistance-help-${name}.png`), Buffer.from(image.data, 'base64'));
+  } });
   await check("an interrupted download offers setup/reload guidance and never boots partial data", `
     return !qev.engine && !qev.model && document.querySelector('#step').disabled && document.querySelector('#auto').disabled && document.querySelector('#map').disabled &&
       document.querySelector('#asset-status').textContent.includes('pak1.pak') &&
@@ -229,8 +235,8 @@ try {
       !!document.querySelector('#decisions') && document.querySelector('#map').options.length >= 8 &&
       typeof qev.engine.snapshot().player.silverKey === 'boolean' && qev.agent.navigation.summary(qev.engine.snapshot()).goalComplete === false;
   `);
-  await check("playback exposes exactly Start, Stop, and Step, with no restart/score/frame buttons", `
-    return [...document.querySelectorAll('.controls button')].map(b=>b.textContent.trim()).join(',')==='Start,Stop,Step' &&
+  await check("playback exposes Start, Stop, Step, and Reset, without separate score/frame buttons", `
+    return [...document.querySelectorAll('.controls button')].map(b=>b.textContent.trim()).join(',')==='Start,Stop,Step,Reset' &&
       !document.querySelector('#restart, #score, #frame') && document.querySelector('#auto').getAttribute('aria-pressed')==='false';
   `);
   await check("native difficulty/map validation fails closed without changing the current world", `
@@ -287,6 +293,7 @@ try {
   await checkAudioPlayback({ evaluate, check, call, until });
   await checkScreen({ evaluate, check, until, pressKeys });
   await checkAssistance({ evaluate, check, until, bindKillForTest, killPlayerViaConsole });
+  await checkReset({ evaluate, check, until, call, bindKillForTest, killPlayerViaConsole });
   await evaluate(`
     window.originalModel = qev.agent.getModel;
     window.mockCalls = [];
@@ -698,7 +705,14 @@ try {
     console.log("Live decision:", await evaluate("({ms:qev.agent.current.ms,inputs:qev.agent.current.requests.length,actions:qev.agent.current.eligible.length,chosen:qev.agent.current.eligible[qev.agent.current.selectedIndex].label,response:qev.agent.current.responses[0]})"));
     await writeFile(resolve(root, "build/live-trace.json"), await evaluate("JSON.stringify(qev.agent.current,null,2)"));
     const id = await evaluate("qev.agent.current.id");
-    await evaluate("document.querySelector('#reset-priorities').click()");
+    await evaluate("window.realReset={model:qev.model,record:qev.agent.current,epoch:qev.engine.snapshot().epoch,order:JSON.stringify(qev.priorityOrder)};document.querySelector('#reset').click()");
+    await until(() => evaluate("qev.engine.snapshot().epoch!==realReset.epoch && !document.querySelector('#reset').disabled"));
+    await check("Reset with real Laya retains the loaded model, priority order and decision history without restarting Auto", `
+      return qev.model===realReset.model && qev.agent.history.includes(realReset.record) &&
+        JSON.stringify(qev.priorityOrder)===realReset.order && qev.engine.snapshot().paused &&
+        qev.playMode==='inspection' && !qev.agent.current && document.querySelector('#model').value==='laya';
+    `);
+    await evaluate("delete window.realReset;document.querySelector('#reset-priorities').click()");
     await until(() => evaluate("!document.querySelector('#auto').disabled"));
     await evaluate(`window.liveSamples=[]; window.sampleTimer=setInterval(()=>{
       if(qev.agent.liveSession !== null && qev.agent.inflight) {

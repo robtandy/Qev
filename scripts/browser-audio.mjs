@@ -88,8 +88,10 @@ export async function checkAudioPlayback({ evaluate, check, call, until }) {
     await evaluate("answerAudioCall()");
     await until(()=>evaluate("!qev.agent.busy && qev.agent.current?.status==='executed'"));
     await check("a single Step emits real game audio during its action and still executes exactly twelve ticks", `
-      return qev.engine.snapshot().tick===audioBefore.tick+12 && qev.engine.snapshot().player.ammo<audioBefore.player.ammo &&
-        audioMeter.peak>0.00001 && audioMeter.invalid===0;
+      const after=qev.engine.snapshot();
+      if(!(after.tick===audioBefore.tick+12 && after.player.ammo<audioBefore.player.ammo && audioMeter.peak>0.00001 && audioMeter.invalid===0))
+        throw new Error('Audio Step: '+JSON.stringify({before:audioBefore,after,peak:audioMeter.peak,callbacks:audioMeter.callbacks,invalid:audioMeter.invalid,decision:qev.agent.current}));
+      return true;
     `);
     await quiet("finishing a Step silences output without needing another user gesture");
 

@@ -6,6 +6,7 @@ import { Stepper } from "./stepper.js";
 import { PRIMARY_OBJECTIVE, DEFAULT_PRIORITY_ORDER, validatePriorityOrder, objectivesFor } from "./objective.js";
 import { Priorities } from "./priorities.js";
 import { ASSISTANCE, DEFAULT_ASSISTANCE, assistanceOf, validateAssistance } from "./assistance.js";
+import { AssistanceHelp } from "./assistance-help.js";
 import { DEMO, DEMO_MAPS } from "./demo-manifest.js";
 import { loadDemo } from "./demo.js";
 
@@ -32,6 +33,7 @@ function showError(error) {
   clearTimeout(errorTimer);
   errorTimer = setTimeout(() => { $("error").hidden = true; }, 12_000);
 }
+const assistanceHelp = new AssistanceHelp({ button: $("assistance-help-button"), preview: $("assistance-help-preview"), dialog: $("assistance-help"), onOpen: stop });
 const decisionCards = new DecisionCards($("decisions"), { onError: showError });
 const priorityPanel = new Priorities($("priorities"), { getOrder: currentPriorityOrder,
   onChange: order => guard(() => setPriorities(order)), resetButton: $("reset-priorities"), announcement: $("priority-status") });
@@ -69,6 +71,7 @@ function updateControls() {
   const paused = live && snapshot.paused && !snapshot.remaining;
   const hasModel = !!(agent?.getModel() || model);
   $("pause").disabled = !engine;
+  $("reset").disabled = !live || !!operation;
   $("step").disabled = !alive || !paused || busy || !hasModel || auto;
   $("auto").disabled = !alive || busy || auto;
   $("auto").setAttribute("aria-pressed", String(auto));
@@ -84,8 +87,8 @@ function updateControls() {
   $("cancel-model").disabled = !!loadingModel?.abort.signal.aborted;
   if (operation) $("status").textContent = operation;
   else if (!live) $("status").textContent = engine ? "Waiting for the level…" : "Loading the demo automatically…";
-  else if (snapshot.completed) $("status").textContent = "Level complete. Choose another map to load it stopped.";
-  else if (!alive) $("status").textContent = "The player is dead. Choose a map to load a new episode.";
+  else if (snapshot.completed) $("status").textContent = "Level complete. Reset or choose another map to load it stopped.";
+  else if (!alive) $("status").textContent = "The player is dead. Reset or choose a map to load a new episode.";
   else if (snapshot.remaining) $("status").textContent = `Stepping · ${snapshot.remaining} ticks left. Stop interrupts immediately.`;
   else if (auto) {
     const last = agent.history.findLast((r) => r.mode === "realtime" && r.ms !== null);
@@ -170,12 +173,24 @@ async function runAuto() {
   } finally { if (token === autoToken) stop(); }
 }
 
-async function loadSelectedMap() {
+async function loadLevel(map, difficulty, message) {
   if (!engine || operation) return;
-  const map = $("map").value, difficulty = Number($("difficulty").value);
-  stop(); agent.invalidate(); operation = "Loading the selected map · stopped…"; updateControls();
-  try { await engine.loadMap(map, difficulty); }
-  finally { operation = ""; }
+  stop(); agent.invalidate(); operation = message; updateControls();
+  try {
+    await engine.loadMap(map, difficulty);
+    $("map").value = map; $("difficulty").value = String(difficulty);
+  } finally { operation = ""; }
+}
+async function loadSelectedMap() {
+  return loadLevel($("map").value, Number($("difficulty").value), "Loading the selected map · stopped…");
+}
+async function resetGame() {
+  if (!engine || operation) return;
+  const current = engine.snapshot();
+  if (!current.ready) return;
+  // Restart the ACTUAL active level/skill, not stale or forcibly changed selectors.
+  // Keep weights, assistance, priorities and historical decisions; never auto-resume.
+  return loadLevel(current.map, current.difficulty, "Resetting the current level · stopped…");
 }
 
 function changeAssistance() {
@@ -315,6 +330,7 @@ $("assistance").addEventListener("change", () => guard(changeAssistance));
 $("pause").addEventListener("click", stop);
 $("step").addEventListener("click", () => playFromGesture(step));
 $("auto").addEventListener("click", () => playFromGesture(runAuto));
+$("reset").addEventListener("click", () => guard(resetGame));
 for (const id of ["map", "difficulty"]) $(id).addEventListener("change", () => guard(loadSelectedMap));
 $("speed").addEventListener("change", () => guard(async () => engine?.speed(Number($("speed").value))));
 $("export").addEventListener("click", () => {
@@ -324,6 +340,7 @@ $("export").addEventListener("click", () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 addEventListener("keydown", (event) => {
+  if (assistanceHelp.modalOpen) return;
   if (event.target.closest("input, select, textarea, button, summary, a") || event.ctrlKey || event.metaKey || event.altKey) return;
   let button;
   if (event.code === "KeyP" || event.code === "Escape") button = $("pause");

@@ -162,5 +162,6 @@ test("the HTML keeps the card feed and compact controls without the old game pan
   assert.match(footer, /Thanks to:/);
   assert.deepEqual([...footer.matchAll(/<a\b[^>]*>([^<]+)<\/a>/g)].map(m => m[1]), ["kev", "laya", "kevala", "qwasm", "libre quake"]);
   const controls = html.match(/<div class="controls">([\s\S]*?)<\/div>/)[1];
-  assert.deepEqual([...controls.matchAll(/<button\b[^>]*>([^<]+)<\/button>/g)].map(m => m[1]), ["Start", "Stop", "Step"]);
+  assert.deepEqual([...controls.matchAll(/<button\b[^>]*>([^<]+)<\/button>/g)].map(m => m[1]), ["Start", "Stop", "Step", "Reset"]);
+  assert.match(controls, /id="reset" type="button" aria-label="Reset the current level"[^>]*disabled/);
 });

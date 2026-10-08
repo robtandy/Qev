@@ -26,7 +26,10 @@
         <label class="difficulty-setting">Difficulty <select id="difficulty" title="Changing difficulty reloads the current map and stops the game" disabled><option value="0">Easy</option><option value="1">Normal</option><option value="2" selected>Hard</option><option value="3">Nightmare</option></select></label>
         <label class="model-setting needs-selection">Model <select id="model" required aria-describedby="model-status"><option value="" disabled selected>Choose a decision model</option><option value="laya">Laya · 479 MB</option><option value="kev-0.8b">Kev · 857 MB</option></select></label>
         <label class="backend-setting">Backend <select id="backend"><option value="auto">Auto / GPU</option><option value="wasm">CPU / WASM</option></select></label>
-        <label class="assistance-setting">Assistance <select id="assistance" aria-describedby="assistance-note" title="Changing assistance stops play. Off keeps coarse visible telemetry, not screen-only perception." disabled><option value="assisted" selected>On</option><option value="unassisted">Off · visible telemetry</option></select></label>
+        <div class="assistance-setting">
+          <div class="setting-title"><label for="assistance">Assistance</label><button id="assistance-help-button" class="help-button" type="button" aria-label="What is assistance?" aria-haspopup="dialog" aria-controls="assistance-help assistance-help-preview" aria-expanded="false"><span aria-hidden="true">?</span></button></div>
+          <select id="assistance" aria-describedby="assistance-note" title="Changing assistance stops play. Use the question mark for details." disabled><option value="assisted" selected>On</option><option value="unassisted">Off · visible telemetry</option></select>
+        </div>
         <button id="cancel-model" aria-label="Cancel model download" hidden>Cancel</button>
       </div>
       <div class="setup-status">
@@ -42,6 +45,7 @@
           <button id="auto" class="primary" aria-pressed="false" title="Start real-time model control with sound" disabled>Start</button>
           <button id="pause" title="Stop the game and pending actions (P / Esc)" disabled>Stop</button>
           <button id="step" title="Choose and run one short action with sound, then stop (N)" disabled>Step</button>
+          <button id="reset" type="button" aria-label="Reset the current level" title="Restart this map at the same difficulty, keeping the model and settings; stay stopped" disabled>Reset</button>
           <label>Speed <select id="speed"><option value="1">1×</option><option value="0.25">¼×</option><option value="0.1">⅒×</option></select></label>
         </div>
         <div class="playback-meta"><p id="status" role="status">Preparing the LibreQuake demo…</p><span id="clock">60 Hz · async control</span></div>
@@ -74,6 +78,24 @@
     <a href="https://github.com/GMH-Code/Qwasm" target="_blank" rel="noopener noreferrer">qwasm</a>
     <a href="https://github.com/lavenderdotpet/LibreQuake" target="_blank" rel="noopener noreferrer">libre quake</a>
   </footer>
+  <div id="assistance-help-preview" class="help-preview" role="dialog" aria-modal="false" aria-labelledby="assistance-help-preview-title" hidden>
+    <div class="help-head"><h2 id="assistance-help-preview-title">What is assistance?</h2><button type="button" data-help-close aria-label="Close assistance preview">×</button></div>
+    <div class="help-copy"></div>
+    <div class="help-foot"><button type="button" data-help-open>Keep open</button><span>Clicking pauses play.</span></div>
+  </div>
+  <dialog id="assistance-help" class="help-dialog" aria-labelledby="assistance-help-title" aria-describedby="assistance-help-intro">
+    <div class="help-head"><h2 id="assistance-help-title">What is assistance?</h2><button type="button" data-help-close aria-label="Close assistance explanation">×</button></div>
+    <div class="help-copy">
+      <p id="assistance-help-intro" class="help-intro"><strong>Assistance is OK here.</strong> We are testing the model’s decisions, not its ability to execute precise movements or aim.</p>
+      <h3>On · focus on decisions</h3>
+      <p>The controller supplies engine-state information, uses position memory and local route/cover checks, and offers survival-biased actions. The model chooses; code handles bounded movement, target tracking and aligned firing.</p>
+      <h3>Off · visible telemetry</h3>
+      <p>The model chooses from 14 fixed movement/look/fire inputs without route probes, position memory, targeting helpers or tactical filtering. It still gets HUD facts and renderer-labelled visible-pixel cues—not RGB-only vision.</p>
+      <p class="help-note">Assistance changes the information and actions offered, too. Compare runs with the same setting; this is not a benchmark of unaided, human-equivalent play.</p>
+      <p class="help-note">Changing assistance stops play. The chosen model action is never silently replaced.</p>
+    </div>
+    <div class="help-foot"><span>Closing this explanation leaves play stopped.</span><button type="button" data-help-close>Close</button></div>
+  </dialog>
   <script type="module" src="/src/app.js"></script>
 </body>
 </html>

@@ -17,9 +17,10 @@ npm run serve
 ```
 
 Open **http://127.0.0.1:8090/**. Choose **Kev** or **Laya** in the highlighted dropdown to load it, then press **Start**.
-**Stop** freezes the game; **Step** runs one model-selected action and stops. Sound plays during gameplay.
+**Stop** freezes the game; **Step** runs one model-selected action and stops. **Reset** restarts the current level stopped, keeping the model and settings. Sound plays during gameplay.
 Changing map or difficulty reloads the game stopped. The default is map 6 on Hard.
 Use **Assistance → Off · visible telemetry** to experiment without control aids; switching stops play without reloading the model.
+Hover or click the circled **?** for why assistance is intentional: we test decisions, not mechanical execution.
 
 Setup downloads the toolchain and verified LibreQuake assets into ignored `build/`;
 game files are not included in the repo. Models download only on request and cache locally.
